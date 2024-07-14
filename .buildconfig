@@ -1,0 +1,12 @@
+[default]
+name=Default
+runtime=host
+toolchain=default
+config-opts=-Dbuildtype=release
+run-opts=
+prefix=/home/jrelvas/.var/app/org.gnome.Builder/cache/gnome-builder/install/hwcaps-loader/host
+app-id=
+postbuild=
+prebuild=
+run-command=
+default=true
