@@ -166,7 +166,6 @@ pub extern fn main(argc: i32, argv: *const *const c_char, envp: *const *const c_
     );
     target_path = target_path + first_half + hwcaps_dir + target_feature_set + second_half;
 
-    //TODO: Execute the target path.
     _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
     _ = sys::write(sys::STDOUT, &target_path.as_bytes());
     _ = sys::write(sys::STDOUT, b"\n");
