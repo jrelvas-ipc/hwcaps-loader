@@ -23,6 +23,7 @@
 #![feature(lang_items, c_size_t)]
 #![feature(start)]
 #![feature(alloc_error_handler)]
+#![feature(never_type)]
 
 mod mem_alloc;
 mod sys;
@@ -30,6 +31,7 @@ mod sys;
 extern crate alloc;
 
 use core::str;
+use core::ffi::c_char;
 use core::ffi::CStr;
 use core::fmt::Write;
 
@@ -57,7 +59,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     sys::exit(1);
 }
 
-fn get_arg_string(ptr: *const u8) -> &'static str {
+fn get_arg_string(ptr: *const c_char) -> &'static str {
     let arg_slice = unsafe { slice::from_raw_parts(ptr as *mut u8, sys::MAX_ARG_LEN as usize) };
 
     let terminator_index = memchr(b'\0', &arg_slice)
@@ -115,7 +117,7 @@ fn resolve_path(cwd_fd: i32, path: &str) -> String {
 
 
 #[no_mangle]
-pub extern fn main(argc: i32, argv: *const *const u8) -> i32 {
+pub extern fn main(argc: i32, argv: *const *const c_char, envp: *const *const c_char) {
     let arguments = unsafe { slice::from_raw_parts(argv, argc as usize) };
     // We cheat here - argv0 and exec_path have a null terminator
     // (makes it easier to interface with C code without useless copies)
@@ -165,9 +167,15 @@ pub extern fn main(argc: i32, argv: *const *const u8) -> i32 {
     target_path = target_path + first_half + hwcaps_dir + target_feature_set + second_half;
 
     //TODO: Execute the target path.
-    _ = sys::write(sys::STDOUT, b"Path to execute:\n");
+    _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
     _ = sys::write(sys::STDOUT, &target_path.as_bytes());
     _ = sys::write(sys::STDOUT, b"\n");
 
-    0
+    let str_ptr = target_path.as_ptr() as *const i8;
+    let c_str = unsafe { CStr::from_ptr(str_ptr) };
+
+    match sys::execve(c_str, argv, envp) {
+        Some(e) => panic!("Failed to execute program \"{}\"! (errno: {})", target_path, e),
+        None => {} // This never happens - our program doesn't return
+    };
 }

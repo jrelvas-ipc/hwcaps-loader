@@ -50,6 +50,8 @@ extern "C" {
     fn readlink_c(pathname: *const c_char, buf: *const u8, size_t: c_size_t) -> c_ssize_t;
     #[link_name = "openat"]
     fn openat_c(dirfd: c_int, pathname: *const c_char, flags: c_int, ...) -> c_int;
+    #[link_name = "execve"]
+    fn execve_c(pathname: *const c_char, argv: *const *const c_char, envp: *const *const c_char) -> c_int;
 }
 
 #[inline]
@@ -96,4 +98,14 @@ pub fn openat(dirfd: i32, path: &CStr, flags: c_int) -> Result<i32, i32> {
     }
 
     Ok(fd)
+}
+
+#[inline]
+pub fn execve(path: &CStr, argv: *const *const c_char, envp: *const *const c_char) -> Option<i32> {
+    let ret = unsafe { execve_c(path.as_ptr(), argv, envp) };
+    if ret == -1 {
+        return Some(unsafe { *errno_location_c() })
+    }
+
+    None
 }
