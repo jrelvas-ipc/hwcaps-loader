@@ -122,7 +122,7 @@ pub extern fn main(argc: i32, argv: *const *const c_char, envp: *const *const c_
     // We cheat here - argv0 and exec_path have a null terminator
     // (makes it easier to interface with C code without useless copies)
     let argv0 = get_arg_string(arguments[0]);
-    let (exec_path, bin_index, usr_index) = get_exec_path();
+    let (mut exec_path, bin_index, usr_index) = get_exec_path();
 
     //Make sure we're not trying to execute ourselves!
     if argv0.ends_with(&exec_path[bin_index+1..]){
@@ -134,17 +134,19 @@ pub extern fn main(argc: i32, argv: *const *const c_char, envp: *const *const c_
     // When argv0 is a command alias (foo -> /usr/bin/foo, for example)
     // Set cwd to our binary's parent (normally /usr/bin)
     if !argv0.starts_with("/") && !argv0.starts_with("./") && !argv0.starts_with("../") {
-        //Clone to add a null pointer
-        let mut terminated_parent = Vec::with_capacity(bin_index+1);
-        terminated_parent.extend_from_slice(&exec_path.as_bytes()[..bin_index]);
-        terminated_parent.push(b'\0');
+        //Sneakily put a null byte here without making a new string
+        let string_bytes = unsafe { exec_path.as_bytes_mut() };
+        let byte = string_bytes[bin_index + 1];
+        string_bytes[bin_index + 1] = b'\0';
 
-        let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(&terminated_parent) };
+        let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(&string_bytes) };
 
         cwd = match sys::openat(sys::AT_FDCWD, c_str, sys::O_PATH) {
             Ok(d) => d,
             Err(e) => panic!("Failed to open parent! (errno: {})", e)
         };
+        //Restore the previous character
+        string_bytes[bin_index + 1] = byte;
     }
 
     let argv0 = resolve_path(cwd, argv0);
