@@ -82,7 +82,6 @@ pub fn readlink(path: &CStr) -> Result<String, i32> {
 
     unsafe {
         buffer.set_len(size as usize + 1);
-        buffer.shrink_to_fit();
         let mut buffer = mem::ManuallyDrop::new(buffer);
 
         Ok(String::from_raw_parts(buffer.as_mut_ptr(), buffer.len(), buffer.capacity()))

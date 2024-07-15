@@ -24,7 +24,6 @@
 #![feature(start)]
 #![feature(alloc_error_handler)]
 #![feature(never_type)]
-
 mod mem_alloc;
 mod sys;
 
@@ -163,10 +162,36 @@ pub extern fn main(argc: i32, argv: *const *const c_char, envp: *const *const c_
     let hwcaps_dir = "hwcaps";
     let target_feature_set = "/x86-64-v1/";
 
-    let mut target_path = String::with_capacity(
-       argv0.len() + hwcaps_dir.len() + target_feature_set.len()
-    );
-    target_path = target_path + first_half + hwcaps_dir + target_feature_set + second_half;
+    let new_len = argv0.len() + hwcaps_dir.len() + target_feature_set.len() + 2;
+
+    if new_len > exec_path.capacity() {
+        panic!("Path is too large")
+    }
+
+    // Very hacky and unsafe code :)
+    // We can reuse the string we already have instead of allocating a new one, saving on memory.
+    let mut target_path = exec_path;
+
+    unsafe {
+        let bytes = target_path.as_mut_vec();
+        bytes.set_len(new_len);
+
+        //We've already determined the path starts with this, so we can just skip over that
+        let mut start = usr_index+1;
+        let mut end = start+hwcaps_dir.len();
+        bytes[start..end].clone_from_slice(&hwcaps_dir.as_bytes());
+
+        // TODO: this part must be rewritten if the binary with the target feature level doesn't exist
+        start = end;
+        end = start + target_feature_set.len();
+        bytes[start..end].clone_from_slice(&target_feature_set.as_bytes());
+
+        start = end;
+        end = start + second_half.len();
+        bytes[start..end].clone_from_slice(&second_half.as_bytes());
+
+        bytes[end+1] = b'\0'
+    };
 
     _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
     _ = sys::write(sys::STDOUT, &target_path.as_bytes());
