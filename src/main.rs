@@ -123,11 +123,11 @@ fn resolve_path(cwd_fd: i32, path: &str) -> String {
 
 
 #[no_mangle]
-pub extern fn main(argc: i32, argv: *const *const c_char, envp: *const *const c_char) {
-    let arguments = unsafe { slice::from_raw_parts(argv, argc as usize) };
+pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) {
     // We cheat here - argv0 and exec_path have a null terminator
     // (makes it easier to interface with C code without useless copies)
-    let argv0 = get_arg_string(arguments[0]);
+    // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
+    let argv0 = get_arg_string(unsafe { *argv });
     let (mut exec_path, bin_index, usr_index) = get_exec_path();
 
     //Make sure we're not trying to execute ourselves!
