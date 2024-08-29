@@ -24,6 +24,7 @@
 #![feature(start)]
 #![feature(alloc_error_handler)]
 #![feature(never_type)]
+
 mod mem_alloc;
 mod sys;
 
