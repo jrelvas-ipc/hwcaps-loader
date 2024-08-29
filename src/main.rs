@@ -36,7 +36,6 @@ use core::fmt::Write;
 
 use alloc::slice;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use memchr::{memchr, memrchr};
 use arrayvec::ArrayString;
