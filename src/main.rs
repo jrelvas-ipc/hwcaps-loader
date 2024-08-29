@@ -22,22 +22,17 @@
 #![no_main]
 #![feature(lang_items, c_size_t)]
 #![feature(start)]
-#![feature(alloc_error_handler)]
 #![feature(never_type)]
 #![feature(str_from_raw_parts)]
 
-mod mem_alloc;
 mod sys;
-
-extern crate alloc;
 
 use core::str;
 use core::ffi::c_char;
 use core::ffi::CStr;
 use core::fmt::Write;
 use core::cell;
-
-use alloc::slice;
+use core::slice;
 
 use memchr::{memchr, memrchr};
 use arrayvec::ArrayString;
