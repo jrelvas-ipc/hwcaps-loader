@@ -23,10 +23,7 @@ use core::ffi::c_size_t;
 use core::ffi::c_ssize_t;
 use core::ffi::c_char;
 use core::ffi::CStr;
-use core::mem;
-
-use alloc::vec::Vec;
-use alloc::string::String;
+use core::cell;
 
 pub const MAX_ARG_LEN: c_size_t = 131072;
 pub const MAX_PATH_LEN: c_ssize_t = 4096;
@@ -70,22 +67,19 @@ pub fn write(fd: i32, buffer: &[u8]) -> Result<usize, i32> {
     Ok(size as usize)
 }
 
-#[inline]
-pub fn readlink(path: &CStr) -> Result<String, i32> {
-    let mut buffer = Vec::with_capacity(MAX_PATH_LEN as usize);
+pub type MutStackSlice = cell::UnsafeCell<[u8; MAX_PATH_LEN as usize]>;
 
-    let size = unsafe {readlink_c(path.as_ptr(), buffer.as_ptr(), buffer.capacity()) };
+#[inline]
+pub fn readlink(path: &CStr) -> Result<(MutStackSlice, usize), i32> {
+    let buffer = [0; MAX_PATH_LEN as usize];
+
+    let size = unsafe {readlink_c(path.as_ptr(), buffer.as_ptr(), buffer.len()) };
 
     if size < 0 {
         return Err(unsafe {*errno_location_c()})
     }
 
-    unsafe {
-        buffer.set_len(size as usize + 1);
-        let mut buffer = mem::ManuallyDrop::new(buffer);
-
-        Ok(String::from_raw_parts(buffer.as_mut_ptr(), buffer.len(), buffer.capacity()))
-    }
+    Ok((cell::UnsafeCell::new(buffer), size as usize))
 }
 
 #[inline]

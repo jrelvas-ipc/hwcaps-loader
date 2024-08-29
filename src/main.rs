@@ -24,6 +24,7 @@
 #![feature(start)]
 #![feature(alloc_error_handler)]
 #![feature(never_type)]
+#![feature(str_from_raw_parts)]
 
 mod mem_alloc;
 mod sys;
@@ -34,9 +35,9 @@ use core::str;
 use core::ffi::c_char;
 use core::ffi::CStr;
 use core::fmt::Write;
+use core::cell;
 
 use alloc::slice;
-use alloc::string::String;
 
 use memchr::{memchr, memrchr};
 use arrayvec::ArrayString;
@@ -69,32 +70,32 @@ fn get_arg_string(ptr: *const c_char) -> &'static str {
 
 }
 
-fn get_exec_path() -> (String, usize, usize) {
-    let exec_path = match sys::readlink(c"/proc/self/exe") {
+fn get_exec_path() -> (sys::MutStackSlice, usize, usize, usize) {
+    let (exec_path, exec_size) = match sys::readlink(c"/proc/self/exe") {
         Ok(p) => p,
         Err(e) => panic!("Failed to read exec magic link! (errno: {})", e)
     };
 
-    if !(exec_path.len() > 0 ){
+    let exec_path = exec_path.into_inner();
+
+    if !(exec_size > 0 ){
         panic!("Exec magic link leads to empty path!")
     }
 
-    let bytes = exec_path.as_bytes();
-
-    let last_dash = match memrchr(b'/', bytes) {
+    let last_dash = match memrchr(b'/', &exec_path) {
         Some(i) => i,
         _ => panic!("Exec magic link has no parent!")
     };
 
-    let second_last_dash = match memrchr(b'/', &bytes[..last_dash]) {
+    let second_last_dash = match memrchr(b'/', &exec_path[..last_dash]) {
         Some(i) => i,
         _ => panic!("Exec magic link has no grandparent!")
     };
 
-    (exec_path, last_dash, second_last_dash)
+    (cell::UnsafeCell::new(exec_path), exec_size, last_dash, second_last_dash)
 }
 
-fn resolve_path(cwd_fd: i32, path: &str) -> String {
+fn resolve_path(cwd_fd: i32, path: &str) -> (sys::MutStackSlice, usize) {
     let str_ptr = path.as_ptr() as *const i8;
     let c_str = unsafe { CStr::from_ptr(str_ptr) };
 
@@ -128,10 +129,12 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // (makes it easier to interface with C code without useless copies)
     // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
     let argv0 = get_arg_string(unsafe { *argv });
-    let (mut exec_path, bin_index, usr_index) = get_exec_path();
+    let (exec_path, exec_len, bin_index, usr_index) = get_exec_path();
+
+    let mut exec_path = exec_path.into_inner();
 
     //Make sure we're not trying to execute ourselves!
-    if argv0.ends_with(&exec_path[bin_index+1..]){
+    if argv0.as_bytes().ends_with(&exec_path[bin_index+1..exec_len+1]){
         panic!("Cannot execute own binary!")
     }
 
@@ -141,23 +144,24 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // Set cwd to our binary's parent (normally /usr/bin)
     if !argv0.starts_with("/") && !argv0.starts_with("./") && !argv0.starts_with("../") {
         //Sneakily put a null byte here without making a new string
-        let string_bytes = unsafe { exec_path.as_bytes_mut() };
-        let byte = string_bytes[bin_index + 1];
-        string_bytes[bin_index + 1] = b'\0';
+        let byte = exec_path[bin_index + 1];
+        exec_path[bin_index + 1] = b'\0';
 
-        let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(&string_bytes) };
+        let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(&exec_path) };
 
         cwd = match sys::openat(sys::AT_FDCWD, c_str, sys::O_PATH) {
             Ok(d) => d,
             Err(e) => panic!("Failed to open parent! (errno: {})", e)
         };
         //Restore the previous character
-        string_bytes[bin_index + 1] = byte;
+        exec_path[bin_index + 1] = byte;
     }
 
-    let argv0 = resolve_path(cwd, argv0);
+    let (argv0, argv0_len) = resolve_path(cwd, argv0);
+    let argv0 = argv0.into_inner();
 
-    let (first_half, second_half) = argv0.split_at(usr_index + 1);
+    let first_half = &argv0[..usr_index+1];
+    let second_half = &argv0[usr_index+1..argv0_len];
 
     // Check if our target's on a valid location
     if first_half != &exec_path[..usr_index + 1] {
@@ -169,46 +173,41 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     let hwcaps_dir = "hwcaps";
     let target_feature_set = "/x86-64-v1/";
 
-    let new_len = argv0.len() + hwcaps_dir.len() + target_feature_set.len() + 2;
+    let new_len = argv0_len + hwcaps_dir.len() + target_feature_set.len() + 2;
 
-    if new_len > exec_path.capacity() {
+    if new_len > exec_path.len() {
         panic!("Path is too large")
     }
 
     // Very hacky and unsafe code :)
-    // We can reuse the string we already have instead of allocating a new one, saving on memory.
+    // We can reuse the string we already have instead of allocating a new one, saving on time.
     let mut target_path = exec_path;
 
-    unsafe {
-        let bytes = target_path.as_mut_vec();
-        bytes.set_len(new_len);
+    //We've already determined the path starts with this, so we can just skip over that
+    let mut start = usr_index+1;
+    let mut end = start+hwcaps_dir.len();
+    target_path[start..end].clone_from_slice(&hwcaps_dir.as_bytes());
 
-        //We've already determined the path starts with this, so we can just skip over that
-        let mut start = usr_index+1;
-        let mut end = start+hwcaps_dir.len();
-        bytes[start..end].clone_from_slice(&hwcaps_dir.as_bytes());
+    // TODO: this part must be rewritten if the binary with the target feature level doesn't exist
+    start = end;
+    end = start + target_feature_set.len();
+    target_path[start..end].clone_from_slice(&target_feature_set.as_bytes());
 
-        // TODO: this part must be rewritten if the binary with the target feature level doesn't exist
-        start = end;
-        end = start + target_feature_set.len();
-        bytes[start..end].clone_from_slice(&target_feature_set.as_bytes());
+    start = end;
+    end = start + second_half.len();
+    target_path[start..end].clone_from_slice(&second_half);
 
-        start = end;
-        end = start + second_half.len();
-        bytes[start..end].clone_from_slice(&second_half.as_bytes());
-
-        bytes[end+1] = b'\0'
-    };
+    target_path[end+1] = b'\0';
 
     _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
-    _ = sys::write(sys::STDOUT, &target_path.as_bytes());
+    _ = sys::write(sys::STDOUT, &target_path);
     _ = sys::write(sys::STDOUT, b"\n");
 
     let str_ptr = target_path.as_ptr() as *const i8;
     let c_str = unsafe { CStr::from_ptr(str_ptr) };
 
     match sys::execve(c_str, argv, envp) {
-        Some(e) => panic!("Failed to execute program \"{}\"! (errno: {})", target_path, e),
+        Some(e) => panic!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e),
         None => {} // This never happens - our program doesn't return
     };
 }
