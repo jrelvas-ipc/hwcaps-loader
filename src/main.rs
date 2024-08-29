@@ -40,6 +40,7 @@ use alloc::vec::Vec;
 
 use memchr::{memchr, memrchr};
 use arrayvec::ArrayString;
+use itoa;
 
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}
@@ -102,11 +103,17 @@ fn resolve_path(cwd_fd: i32, path: &str) -> String {
         Err(e) => panic!("Failed to open \"{}\"! (errno: {})", &path, e)
     };
 
-    let mut fd_proc_path = String::with_capacity(sys::MAX_PATH_LEN as usize);
-    write!(fd_proc_path, "/proc/self/fd/{}\0", fd).expect("Failed to write to string!");
+    static FD_TEMPLATE: &'static [u8] = b"/proc/self/fd/";
 
-    let str_ptr = fd_proc_path.as_ptr() as *const i8;
-    let c_str = unsafe { CStr::from_ptr(str_ptr) };
+    let fd_path = &mut [0; sys::MAX_PATH_LEN as usize];
+    fd_path[..FD_TEMPLATE.len()].clone_from_slice(FD_TEMPLATE);
+
+    let mut number_buffer = itoa::Buffer::new();
+    let fd_buffer = number_buffer.format(fd as u32);
+
+    fd_path[FD_TEMPLATE.len()..FD_TEMPLATE.len()+fd_buffer.len()].clone_from_slice(fd_buffer.as_bytes());
+
+    let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(fd_path) };
 
     match sys::readlink(c_str) {
         Ok(p) => p,

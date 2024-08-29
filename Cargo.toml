@@ -5,12 +5,15 @@ edition = "2021"
 
 [profile.dev]
 panic = "abort"
-lto = true # https://github.com/rust-lang/rust/issues/47493#issuecomment-606385776
+lto = "fat" # https://github.com/rust-lang/rust/issues/47493#issuecomment-606385776
 
 [profile.release]
 panic = "abort"
-lto = true # https://github.com/rust-lang/rust/issues/47493#issuecomment-606385776
+lto = "fat" # https://github.com/rust-lang/rust/issues/47493#issuecomment-606385776
+strip = "symbols"
+codegen-units = 1
 
 [dependencies]
 memchr = { version = "2", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
+itoa = { version = "1" }
