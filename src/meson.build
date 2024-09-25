@@ -10,6 +10,14 @@ else
   rust_target = 'debug'
 endif
 
+if get_option('self_execution_check').enabled()
+  cargo_opt += [ '-F self_execution_check' ]
+endif
+
+if get_option('debug_print').enabled()
+  cargo_opt += [ '-F debug_print' ]
+endif
+
 cargo_build = custom_target(
   'cargo-build',
   build_by_default: true,

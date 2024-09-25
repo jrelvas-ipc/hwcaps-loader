@@ -130,6 +130,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     let mut exec_path = exec_path.into_inner();
 
     //Make sure we're not trying to execute ourselves!
+    #[cfg(feature = "self_execution_check")]
     if argv0.as_bytes().ends_with(&exec_path[bin_index+1..exec_len+1]){
         panic!("Cannot execute own binary!")
     }
@@ -219,9 +220,12 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         // Unless the arch name changes, all we need to do is update the character representing the arch version.
         target_path[version_char_index] = capabilities::HWCAPS_CHARS[i as usize];
 
-        _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
-        _ = sys::write(sys::STDOUT, &target_path[..path_len]);
-        _ = sys::write(sys::STDOUT, b"\n");
+        #[cfg(feature = "debug_print")]
+        {
+            _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
+            _ = sys::write(sys::STDOUT, &target_path[..path_len]);
+            _ = sys::write(sys::STDOUT, b"\n");
+        }
 
         let str_ptr = target_path.as_ptr() as *const i8;
         let c_str = unsafe { CStr::from_ptr(str_ptr) };
