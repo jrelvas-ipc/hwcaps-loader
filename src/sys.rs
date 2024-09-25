@@ -35,6 +35,8 @@ pub const O_NOFOLLOW: c_int = 0o400000;
 pub const O_PATH: c_int = 0o10000000;
 pub const O_CLOEXEC: c_int = 0x80000;
 
+pub const ENOENT: c_int = 2;
+
 #[link(name = "c")]
 extern "C" {
     #[link_name = "write"]

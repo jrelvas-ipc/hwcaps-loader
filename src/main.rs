@@ -26,6 +26,7 @@
 #![feature(str_from_raw_parts)]
 
 mod sys;
+mod capabilities;
 
 use core::str;
 use core::ffi::c_char;
@@ -156,7 +157,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     let argv0 = argv0.into_inner();
 
     let first_half = &argv0[..usr_index+1];
-    let second_half = &argv0[usr_index+1..argv0_len];
+    let second_half = &argv0[usr_index..argv0_len];
 
     // Check if our target's on a valid location
     if first_half != &exec_path[..usr_index + 1] {
@@ -165,12 +166,10 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     // Prepare execution target path
     // TODO: Determine capabilities/featureset of CPU and choose the featureset directory based on that.
-    let hwcaps_dir = "hwcaps";
-    let target_feature_set = "/x86-64-v1/";
+    let hwcaps_dir = b"hwcaps/";
 
-    let new_len = argv0_len + hwcaps_dir.len() + target_feature_set.len() + 2;
-
-    if new_len > exec_path.len() {
+    let base_length = first_half.len() + hwcaps_dir.len();
+    if base_length > sys::MAX_PATH_LEN as usize {
         panic!("Path is too large")
     }
 
@@ -178,31 +177,64 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // We can reuse the string we already have instead of allocating a new one, saving on time.
     let mut target_path = exec_path;
 
-    //We've already determined the path starts with this, so we can just skip over that
-    let mut start = usr_index+1;
-    let mut end = start+hwcaps_dir.len();
-    target_path[start..end].clone_from_slice(&hwcaps_dir.as_bytes());
+    // We've already determined the path starts with this, so we can just skip over that
+    let start = usr_index+1;
+    let end = start+hwcaps_dir.len();
+    target_path[start..end].clone_from_slice(hwcaps_dir);
+    let start = end;
 
-    // TODO: this part must be rewritten if the binary with the target feature level doesn't exist
-    start = end;
-    end = start + target_feature_set.len();
-    target_path[start..end].clone_from_slice(&target_feature_set.as_bytes());
+    let mut must_format_arch = true;
+    let mut version_char_index: usize = 0;
+    let mut path_len = 0;
 
-    start = end;
-    end = start + second_half.len();
-    target_path[start..end].clone_from_slice(&second_half);
+    // Determine the maximum feature level supported by this machine
+    let feature_level = capabilities::get_max_feature_level();
 
-    target_path[end+1] = b'\0';
+    // Generate a path for every available feature level, then attempt to execute it.
+    // Repeat until execve() is sucessful or we run out of levels.
+    for i in (0..=feature_level).rev() {
 
-    _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
-    _ = sys::write(sys::STDOUT, &target_path);
-    _ = sys::write(sys::STDOUT, b"\n");
+        if capabilities::arch_name_changed(i) {
+            must_format_arch = true;
+        }
 
-    let str_ptr = target_path.as_ptr() as *const i8;
-    let c_str = unsafe { CStr::from_ptr(str_ptr) };
+        // Format the second part of the path, which is dependent on the arch name.
+        if must_format_arch {
+            let (relative_char_index, arch_name_len) = capabilities::format_arch_name(&mut target_path[end..], i);
+            version_char_index = relative_char_index + end;
 
-    match sys::execve(c_str, argv, envp) {
-        Some(e) => panic!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e),
-        None => {} // This never happens - our program doesn't return
-    };
+            path_len = base_length + arch_name_len + second_half.len() + 1;
+            if path_len > sys::MAX_PATH_LEN as usize {
+                panic!("Path is too large")
+            }
+
+            let start = start + arch_name_len;
+            let end = start + second_half.len();
+            target_path[start..end].clone_from_slice(&second_half);
+            target_path[end]= b'\0';
+
+            must_format_arch = false;
+        }
+
+        // Unless the arch name changes, all we need to do is update the character representing the arch version.
+        target_path[version_char_index] = capabilities::HWCAPS_CHARS[i as usize];
+
+        _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
+        _ = sys::write(sys::STDOUT, &target_path[..path_len]);
+        _ = sys::write(sys::STDOUT, b"\n");
+
+        let str_ptr = target_path.as_ptr() as *const i8;
+        let c_str = unsafe { CStr::from_ptr(str_ptr) };
+
+        match sys::execve(c_str, argv, envp) {
+            Some(e) => {
+                if e != sys::ENOENT {
+                    panic!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e)
+                }
+            },
+            None => {} // This never happens - our program doesn't return
+        };
+    }
+
+    _ = sys::write(sys::STDOUT, b"No viable binary to execute found!\n");
 }

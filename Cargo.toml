@@ -17,3 +17,4 @@ codegen-units = 1
 memchr = { version = "2", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 itoa = { version = "1" }
+bitflags = { version = "2" }
