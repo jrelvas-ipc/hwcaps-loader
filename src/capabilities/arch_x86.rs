@@ -96,6 +96,7 @@ pub fn arch_name_changed(fl: u32) -> bool {
     return fl + 1 == X86_64_HWCAPS_INDEX
 }
 
+#[inline]
 pub fn format_arch_name(buffer: &mut [u8], feature_level: u32) -> (usize, usize) {
     let arch_string: &[u8];
     let mut version_index = 0;
@@ -122,6 +123,7 @@ pub fn format_arch_name(buffer: &mut [u8], feature_level: u32) -> (usize, usize)
 }
 
 #[cfg(target_arch = "x86")]
+#[inline]
 pub fn get_max_feature_level() -> u32 {
     let feature_bitset: u32;
 
@@ -183,6 +185,7 @@ pub fn get_max_feature_level() -> u32 {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[inline]
 pub fn get_max_feature_level() -> u32 {
     let feature_set_01h_ecx: u32;
     let feature_set_80000001h_ecx: u32;
