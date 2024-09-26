@@ -22,8 +22,6 @@
 #![no_main]
 //#![feature(lang_items)]
 //#![feature(c_size_t)]
-#![feature(start)]
-#![feature(never_type)]
 //#![feature(str_from_raw_parts)]
 
 mod sys;
@@ -52,7 +50,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     //Don't allocate to the heap...
     let mut string = ArrayString::<1024>::new();
 
-    let _ = write!(&mut string, "Error: {message}\nAt: {location}\n");
+    let _ = write!(&mut string, "Error: {message}\nAt: {location}");
     let _ = sys::write(sys::STDOUT, &string.as_bytes());
 
     sys::exit(1);
