@@ -19,11 +19,17 @@
  */
 
 use core::ffi::c_int;
-use core::ffi::c_size_t;
-use core::ffi::c_ssize_t;
+//use core::ffi::c_size_t;
+//use core::ffi::c_ssize_t;
 use core::ffi::c_char;
 use core::ffi::CStr;
 use core::cell;
+
+//TODO: remove this when https://github.com/rust-lang/rust/issues/88345 is stabilized
+#[allow(non_camel_case_types)]
+type c_size_t = usize;
+#[allow(non_camel_case_types)]
+type c_ssize_t = isize;
 
 pub const MAX_ARG_LEN: c_size_t = 131072;
 pub const MAX_PATH_LEN: c_ssize_t = 4096;
