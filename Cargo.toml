@@ -18,6 +18,7 @@ memchr = { version = "2", default-features = false }
 arrayvec = { version = "0.7", default-features = false }
 itoa = { version = "1" }
 bitflags = { version = "2" }
+syscalls = { version = "0.6", default-features = false }
 
 [features]
 default = [ "self_execution_check" ]

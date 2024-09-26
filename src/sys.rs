@@ -25,6 +25,8 @@ use core::ffi::c_char;
 use core::ffi::CStr;
 use core::cell;
 
+use syscalls::{Sysno, syscall, Errno};
+
 //TODO: remove this when https://github.com/rust-lang/rust/issues/88345 is stabilized
 #[allow(non_camel_case_types)]
 type c_size_t = usize;
@@ -45,68 +47,42 @@ pub const ENOENT: c_int = 2;
 
 #[link(name = "c")]
 extern "C" {
-    #[link_name = "write"]
-    fn write_c(fd: c_int, buf: *const u8, count: c_size_t) -> c_ssize_t;
-    #[link_name = "exit"]
-    fn exit_c(status: c_int) -> !;
-    #[link_name = "__errno_location"]
-    fn errno_location_c() -> *mut c_int;
-    #[link_name = "readlink"]
-    fn readlink_c(pathname: *const c_char, buf: *const u8, size_t: c_size_t) -> c_ssize_t;
-    #[link_name = "openat"]
-    fn openat_c(dirfd: c_int, pathname: *const c_char, flags: c_int, ...) -> c_int;
-    #[link_name = "execve"]
-    fn execve_c(pathname: *const c_char, argv: *const *const c_char, envp: *const *const c_char) -> c_int;
 }
 
 #[inline]
 pub fn exit(code: i32) -> ! {
-    unsafe { exit_c(code) }
+    unsafe {
+        _ = syscall!(Sysno::exit, code);
+        core::hint::unreachable_unchecked()
+    }
 }
 
 #[inline]
-pub fn write(fd: i32, buffer: &[u8]) -> Result<usize, i32> {
-    let size = unsafe { write_c(fd, buffer.as_ptr(), buffer.len()) };
-
-    if size < 0 {
-        return Err(unsafe {*errno_location_c()})
-    }
-
-    Ok(size as usize)
-}
-
-pub type MutStackSlice = cell::UnsafeCell<[u8; MAX_PATH_LEN as usize]>;
-
-#[inline]
-pub fn readlink(path: &CStr) -> Result<(MutStackSlice, usize), i32> {
-    let buffer = [0; MAX_PATH_LEN as usize];
-
-    let size = unsafe {readlink_c(path.as_ptr(), buffer.as_ptr(), buffer.len()) };
-
-    if size < 0 {
-        return Err(unsafe {*errno_location_c()})
-    }
-
-    Ok((cell::UnsafeCell::new(buffer), size as usize))
+pub fn write(fd: i32, buffer: &[u8]) -> Result<usize, Errno> {
+    unsafe { syscall!(Sysno::write, fd, buffer.as_ptr(), buffer.len()) }
 }
 
 #[inline]
-pub fn openat(dirfd: i32, path: &CStr, flags: c_int) -> Result<i32, i32> {
-    let fd = unsafe { openat_c(dirfd, path.as_ptr(), O_CLOEXEC | flags) };
-
-    if fd < 0 {
-        return Err(unsafe {*errno_location_c()})
-    }
-
-    Ok(fd)
+pub fn readlink(path: &CStr, buffer: &mut [u8]) -> Result<usize, Errno> {
+    unsafe { syscall!(Sysno::readlink, path.as_ptr(), buffer.as_mut_ptr(), buffer.len()) }
 }
 
 #[inline]
-pub fn execve(path: &CStr, argv: *const *const c_char, envp: *const *const c_char) -> Option<i32> {
-    let ret = unsafe { execve_c(path.as_ptr(), argv, envp) };
-    if ret == -1 {
-        return Some(unsafe { *errno_location_c() })
+pub fn openat(dirfd: i32, path: &CStr, flags: c_int) -> Result<i32, Errno> {
+    let result = unsafe { syscall!(Sysno::openat, dirfd, path.as_ptr(), O_CLOEXEC | flags) };
+    match result {
+        Ok(fd) => {
+            return Ok(fd as i32)
+        },
+        Err(e) => return Err(e),
     }
+}
 
-    None
+#[inline]
+pub fn execve(path: &CStr, argv: *const *const c_char, envp: *const *const c_char) -> Errno {
+     unsafe {
+        let result = syscall!(Sysno::execve, path.as_ptr(), argv, envp);
+        //Execve doesn't return, so it's safe to assume an error occured
+        result.err().unwrap_unchecked()
+    }
 }

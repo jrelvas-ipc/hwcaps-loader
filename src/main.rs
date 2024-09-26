@@ -23,6 +23,7 @@
 //#![feature(lang_items)]
 //#![feature(c_size_t)]
 //#![feature(str_from_raw_parts)]
+#![feature(never_type)]
 
 mod sys;
 mod capabilities;
@@ -31,7 +32,6 @@ use core::str;
 use core::ffi::c_char;
 use core::ffi::CStr;
 use core::fmt::Write;
-use core::cell;
 use core::slice;
 
 use memchr::{memchr, memrchr};
@@ -70,38 +70,36 @@ fn get_arg_string(ptr: *const c_char) -> &'static str {
 
 }
 
-fn get_exec_path() -> (sys::MutStackSlice, usize, usize, usize) {
-    let (exec_path, exec_size) = match sys::readlink(c"/proc/self/exe") {
+fn get_exec_path(buffer: &mut [u8]) -> (usize, usize, usize) {
+    let exec_size = match sys::readlink(c"/proc/self/exe", buffer) {
         Ok(p) => p,
-        Err(e) => panic!("Failed to read exec magic link! (errno: {})", e)
+        Err(e) => panic!("Failed to read exec magic link! (errno: {})", e.into_raw())
     };
-
-    let exec_path = exec_path.into_inner();
 
     if !(exec_size > 0 ){
         panic!("Exec magic link leads to empty path!")
     }
 
-    let last_dash = match memrchr(b'/', &exec_path) {
+    let last_dash = match memrchr(b'/', &buffer) {
         Some(i) => i,
         _ => panic!("Exec magic link has no parent!")
     };
 
-    let second_last_dash = match memrchr(b'/', &exec_path[..last_dash]) {
+    let second_last_dash = match memrchr(b'/', &buffer[..last_dash]) {
         Some(i) => i,
         _ => panic!("Exec magic link has no grandparent!")
     };
 
-    (cell::UnsafeCell::new(exec_path), exec_size, last_dash, second_last_dash)
+    (exec_size, last_dash, second_last_dash)
 }
 
-fn resolve_path(cwd_fd: i32, path: &str) -> (sys::MutStackSlice, usize) {
+fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
     let str_ptr = path.as_ptr() as *const i8;
     let c_str = unsafe { CStr::from_ptr(str_ptr) };
 
     let fd = match sys::openat(cwd_fd, c_str, sys::O_PATH | sys::O_NOFOLLOW) {
         Ok(d) => d,
-        Err(e) => panic!("Failed to open \"{}\"! (errno: {})", &path, e)
+        Err(e) => panic!("Failed to open \"{}\"! (errno: {})", &path, e.into_raw())
     };
 
     static FD_TEMPLATE: &'static [u8] = b"/proc/self/fd/";
@@ -116,9 +114,9 @@ fn resolve_path(cwd_fd: i32, path: &str) -> (sys::MutStackSlice, usize) {
 
     let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(fd_path) };
 
-    match sys::readlink(c_str) {
+    match sys::readlink(c_str, buffer) {
         Ok(p) => p,
-        Err(e) => panic!("Failed to get path of FD \"{}\"! (errno: {})", fd, e)
+        Err(e) => panic!("Failed to get path of FD \"{}\"! (errno: {})", fd, e.into_raw())
     }
 }
 
@@ -129,9 +127,9 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // (makes it easier to interface with C code without useless copies)
     // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
     let argv0 = get_arg_string(unsafe { *argv });
-    let (exec_path, exec_len, bin_index, usr_index) = get_exec_path();
 
-    let mut exec_path = exec_path.into_inner();
+    let mut exec_path = [0; sys::MAX_PATH_LEN as usize];
+    let (exec_len, bin_index, usr_index) = get_exec_path(&mut exec_path);
 
     //Make sure we're not trying to execute ourselves!
     #[cfg(feature = "self_execution_check")]
@@ -158,8 +156,9 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         exec_path[bin_index + 1] = byte;
     }
 
-    let (argv0, argv0_len) = resolve_path(cwd, argv0);
-    let argv0 = argv0.into_inner();
+    let mut buffer = [0; sys::MAX_PATH_LEN as usize];
+    let argv0_len = resolve_path(cwd, argv0, &mut buffer);
+    let argv0 = buffer;
 
     let first_half = &argv0[..usr_index+1];
     let second_half = &argv0[usr_index..argv0_len];
@@ -234,20 +233,18 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         let str_ptr = target_path.as_ptr() as *const i8;
         let c_str = unsafe { CStr::from_ptr(str_ptr) };
 
-        match sys::execve(c_str, argv, envp) {
-            Some(e) => {
-                if e != sys::ENOENT {
-                    let path_string = unsafe {
-                        let slice = slice::from_raw_parts(target_path.as_ptr(), end);
-                        str::from_utf8_unchecked(slice)
-                    };
-                    panic!("Failed to execute program \"{}\"! (errno: {})", path_string, e)
+        match sys::execve(c_str, argv, envp).into_raw() {
+            sys::ENOENT => continue,
+            other => {
+                let path_string = unsafe {
+                    let slice = slice::from_raw_parts(target_path.as_ptr(), end);
+                    str::from_utf8_unchecked(slice)
+                };
+                panic!("Failed to execute program \"{}\"! (errno: {})", path_string, other)
 
-                    //TODO: Use this when https://github.com/rust-lang/rust/issues/119206 is stabilized
-                    //panic!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e)
-                }
-            },
-            None => {} // This never happens - our program doesn't return
+                //TODO: Use this when https://github.com/rust-lang/rust/issues/119206 is stabilized
+                //panic!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e)
+            }
         };
     }
 
