@@ -1,2 +1,0 @@
-option('debug_print', type : 'feature', value : 'disabled')
-option('self_execution_check', type : 'feature', value : 'enabled')

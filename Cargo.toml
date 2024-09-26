@@ -2,6 +2,7 @@
 name = "hwcaps-loader"
 version = "0.1.0"
 edition = "2021"
+panic = "abort"
 
 [profile.dev]
 panic = "abort"
@@ -20,5 +21,6 @@ itoa = { version = "1" }
 bitflags = { version = "2" }
 
 [features]
+default = [ "self_execution_check" ]
 debug_print = []
 self_execution_check = []
