@@ -45,9 +45,6 @@ use itoa;
 //Workarounds for https://github.com/rust-lang/rust/issues/106864
 #[no_mangle]
 extern "C" fn rust_eh_personality() {}
-#[allow(non_snake_case)]
-#[no_mangle]
-extern "C" fn _Unwind_Resume() {}
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
