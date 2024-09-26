@@ -2,7 +2,6 @@
 name = "hwcaps-loader"
 version = "0.2.0"
 edition = "2021"
-panic = "abort"
 
 [profile.dev]
 panic = "abort"
