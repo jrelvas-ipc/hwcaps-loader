@@ -24,7 +24,7 @@
 //#![feature(c_size_t)]
 #![feature(start)]
 #![feature(never_type)]
-#![feature(str_from_raw_parts)]
+//#![feature(str_from_raw_parts)]
 
 mod sys;
 mod capabilities;
@@ -234,7 +234,14 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         match sys::execve(c_str, argv, envp) {
             Some(e) => {
                 if e != sys::ENOENT {
-                    panic!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e)
+                    let path_string = unsafe {
+                        let slice = slice::from_raw_parts(target_path.as_ptr(), end);
+                        str::from_utf8_unchecked(slice)
+                    };
+                    panic!("Failed to execute program \"{}\"! (errno: {})", path_string, e)
+
+                    //TODO: Use this when https://github.com/rust-lang/rust/issues/119206 is stabilized
+                    //panic!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e)
                 }
             },
             None => {} // This never happens - our program doesn't return
