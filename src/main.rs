@@ -23,8 +23,6 @@
 //#![feature(lang_items)]
 //#![feature(c_size_t)]
 //#![feature(str_from_raw_parts)]
-#![feature(never_type)]
-#![feature(macro_metavar_expr_concat)]
 
 mod sys;
 mod capabilities;
