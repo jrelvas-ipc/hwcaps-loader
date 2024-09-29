@@ -97,7 +97,7 @@ pub fn arch_name_changed(fl: u32) -> bool {
 }
 
 #[inline]
-pub fn format_arch_name(buffer: &mut [u8], feature_level: u32) -> (usize, usize) {
+pub fn format_arch_name(buffer: &mut [u8], feature_level: u32) -> Result<(usize, usize), ()> {
     let arch_string: &[u8];
     let mut version_index = 0;
 
@@ -108,7 +108,7 @@ pub fn format_arch_name(buffer: &mut [u8], feature_level: u32) -> (usize, usize)
     }
 
     if buffer.len() < arch_string.len() {
-        panic!("Path is too large")
+        return Err(())
     }
 
     for i in 0..arch_string.len() {
@@ -119,7 +119,7 @@ pub fn format_arch_name(buffer: &mut [u8], feature_level: u32) -> (usize, usize)
         }
     }
 
-    return (version_index, arch_string.len())
+    Ok((version_index, arch_string.len()))
 }
 
 #[cfg(target_arch = "x86")]

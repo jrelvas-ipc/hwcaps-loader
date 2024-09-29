@@ -62,6 +62,12 @@ pub fn write(fd: i32, buffer: &[u8]) -> Result<usize, Errno> {
     unsafe { syscall!(Sysno::write, fd, buffer.as_ptr(), buffer.len()) }
 }
 
+#[macro_export] macro_rules! write_message {
+    ($arg:expr) => {
+        _ = sys::write(sys::STDOUT, $arg);
+    };
+}
+
 #[inline]
 pub fn readlink(path: &CStr, buffer: &mut [u8]) -> Result<usize, Errno> {
     unsafe { syscall!(Sysno::readlink, path.as_ptr(), buffer.as_mut_ptr(), buffer.len()) }

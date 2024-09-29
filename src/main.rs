@@ -24,6 +24,7 @@
 //#![feature(c_size_t)]
 //#![feature(str_from_raw_parts)]
 #![feature(never_type)]
+#![feature(macro_metavar_expr_concat)]
 
 mod sys;
 mod capabilities;
@@ -36,7 +37,27 @@ use core::slice;
 
 use memchr::{memchr, memrchr};
 use arrayvec::ArrayString;
-use itoa;
+
+mod exit_code {
+    macro_rules! def {
+        ($name:ident, $value:expr) => {
+            pub const $name: i32 = $value;
+        };
+    }
+
+    def!(RUST_PANIC, -70100);
+    def!(SELF_EXECUTION, -70200);
+    def!(COMMAND_PATH_INVALID, -70210);
+    def!(COMMAND_PATH_INVALID_ANCESTOR, -70211);
+    def!(PROC_PATH_IO_ERROR, -70220);
+    def!(PROC_PATH_EMPTY, -70221);
+    def!(PROC_PATH_NO_PARENT, -70222);
+    def!(PROC_PATH_NO_GRANDPARENT, -70223);
+    def!(PATH_RESOLUTION_IO_ERROR, -70230);
+    def!(TARGET_PATH_TOO_LARGE, -70240);
+    def!(TARGET_EXECUTION_ERROR, -70241);
+    def!(TARGET_NO_VIABLE_BINARIES, -70242);
+}
 
 //TODO: use when https://doc.rust-lang.org/unstable-book/language-features/lang-items.html stabilizes
 //#[lang = "eh_personality"]
@@ -46,6 +67,7 @@ use itoa;
 #[no_mangle]
 extern "C" fn rust_eh_personality() {}
 
+#[cfg(debug_assertions)]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     let message = _info.message();
@@ -57,14 +79,25 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     let _ = write!(&mut string, "Error: {message}\nAt: {location}\n");
     let _ = sys::write(sys::STDOUT, &string.as_bytes());
 
-    sys::exit(1);
+    sys::exit(exit_code::RUST_PANIC)
+}
+
+#[cfg(not(debug_assertions))]
+// We can't do panic on production...
+// core::fmt increases binary size by an obscene amount
+// and we can't use tfmt because PanicInfo is too tied to core::fmt
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    sys::exit(exit_code::RUST_PANIC)
 }
 
 fn get_arg_string(ptr: *const c_char) -> &'static str {
     let arg_slice = unsafe { slice::from_raw_parts(ptr as *mut u8, sys::MAX_ARG_LEN as usize) };
 
-    let terminator_index = memchr(b'\0', &arg_slice)
-        .expect("No terminator in buffer!");
+    let terminator_index = match memchr(b'\0', &arg_slice) {
+        Some(i) => i,
+        _ => abort!(exit_code::COMMAND_PATH_INVALID, "No terminator in buffer!")
+    };
 
     return unsafe { str::from_utf8_unchecked(&arg_slice[..terminator_index+1])};
 
@@ -73,21 +106,21 @@ fn get_arg_string(ptr: *const c_char) -> &'static str {
 fn get_exec_path(buffer: &mut [u8]) -> (usize, usize, usize) {
     let exec_size = match sys::readlink(c"/proc/self/exe", buffer) {
         Ok(p) => p,
-        Err(e) => panic!("Failed to read exec magic link! (errno: {})", e.into_raw())
+        Err(e) => abort!(exit_code::PROC_PATH_IO_ERROR, "Failed to read exec magic link! (errno: {})", e.into_raw())
     };
 
     if !(exec_size > 0 ){
-        panic!("Exec magic link leads to empty path!")
+        abort!(exit_code::PROC_PATH_EMPTY, "Exec magic link leads to empty path!")
     }
 
     let last_dash = match memrchr(b'/', &buffer) {
         Some(i) => i,
-        _ => panic!("Exec magic link has no parent!")
+        _ => abort!(exit_code::PROC_PATH_NO_PARENT, "Exec magic link has no parent!")
     };
 
     let second_last_dash = match memrchr(b'/', &buffer[..last_dash]) {
         Some(i) => i,
-        _ => panic!("Exec magic link has no grandparent!")
+        _ => abort!(exit_code::PROC_PATH_NO_GRANDPARENT, "Exec magic link has no grandparent!")
     };
 
     (exec_size, last_dash, second_last_dash)
@@ -99,24 +132,19 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
 
     let fd = match sys::openat(cwd_fd, c_str, sys::O_PATH | sys::O_NOFOLLOW) {
         Ok(d) => d,
-        Err(e) => panic!("Failed to open \"{}\"! (errno: {})", &path, e.into_raw())
+        Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution error! Failed to open \"{}\"! (errno: {})", &path, e.into_raw())
     };
 
-    static FD_TEMPLATE: &'static [u8] = b"/proc/self/fd/";
+    let mut fd_path = [0; 1024];
+    let mut writer = PrintBuff::new(&mut fd_path);
 
-    let fd_path = &mut [0; sys::MAX_PATH_LEN as usize];
-    fd_path[..FD_TEMPLATE.len()].clone_from_slice(FD_TEMPLATE);
+    _ = tfmt::uwrite!(&mut writer, "proc/self/fd/{}", fd);
 
-    let mut number_buffer = itoa::Buffer::new();
-    let fd_buffer = number_buffer.format(fd as u32);
-
-    fd_path[FD_TEMPLATE.len()..FD_TEMPLATE.len()+fd_buffer.len()].clone_from_slice(fd_buffer.as_bytes());
-
-    let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(fd_path) };
+    let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(&fd_path) };
 
     match sys::readlink(c_str, buffer) {
         Ok(p) => p,
-        Err(e) => panic!("Failed to get path of FD \"{}\"! (errno: {})", fd, e.into_raw())
+        Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution error! Failed to get path of FD \"{}\"! (errno: {})", fd, e.into_raw())
     }
 }
 
@@ -134,7 +162,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     //Make sure we're not trying to execute ourselves!
     #[cfg(feature = "self_execution_check")]
     if argv0.as_bytes().ends_with(&exec_path[bin_index+1..exec_len+1]){
-        panic!("Cannot execute own binary!")
+        abort!(exit_code::SELF_EXECUTION, "Cannot execute own binary!")
     }
 
     let mut cwd = sys::AT_FDCWD;
@@ -150,7 +178,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
         cwd = match sys::openat(sys::AT_FDCWD, c_str, sys::O_PATH) {
             Ok(d) => d,
-            Err(e) => panic!("Failed to open parent! (errno: {})", e)
+            Err(e) => abort!(exit_code::COMMAND_PATH_INVALID_ANCESTOR, "Failed to open parent! (errno: {})", e.into_raw())
         };
         //Restore the previous character
         exec_path[bin_index + 1] = byte;
@@ -174,7 +202,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     let base_length = first_half.len() + hwcaps_dir.len();
     if base_length > sys::MAX_PATH_LEN as usize {
-        panic!("Path is too large")
+        abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target path is too large!")
     }
 
     // Very hacky and unsafe code :)
@@ -204,12 +232,15 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
         // Format the second part of the path, which is dependent on the arch name.
         if must_format_arch {
-            let (relative_char_index, arch_name_len) = capabilities::format_arch_name(&mut target_path[end..], i);
+            let (relative_char_index, arch_name_len) = match capabilities::format_arch_name(&mut target_path[end..], i) {
+                Ok(v) => v,
+                Err(_) => abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target path is too large!"),
+            };
             version_char_index = relative_char_index + end;
 
             path_len = base_length + arch_name_len + second_half.len() + 1;
             if path_len > sys::MAX_PATH_LEN as usize {
-                panic!("Path is too large")
+                abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target path is too large!")
             }
 
             let start = start + arch_name_len;
@@ -223,11 +254,13 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         // Unless the arch name changes, all we need to do is update the character representing the arch version.
         target_path[version_char_index] = capabilities::HWCAPS_CHARS[i as usize];
 
-        #[cfg(feature = "debug_print")]
+        #[cfg(debug_assertions)]
         {
-            _ = sys::write(sys::STDOUT, b"(DEBUG) Executing:\n");
-            _ = sys::write(sys::STDOUT, &target_path[..path_len]);
-            _ = sys::write(sys::STDOUT, b"\n");
+            let path_string = unsafe {
+                let slice = slice::from_raw_parts(target_path.as_ptr(), path_len);
+                str::from_utf8_unchecked(slice)
+            };
+            print!("(DEBUG) Executing: {}\n", path_string);
         }
 
         let str_ptr = target_path.as_ptr() as *const i8;
@@ -240,14 +273,70 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
                     let slice = slice::from_raw_parts(target_path.as_ptr(), end);
                     str::from_utf8_unchecked(slice)
                 };
-                panic!("Failed to execute program \"{}\"! (errno: {})", path_string, other)
+                abort!(exit_code::TARGET_EXECUTION_ERROR, "Failed to execute binary at \"{}\"! (errno: {})", path_string, other)
 
                 //TODO: Use this when https://github.com/rust-lang/rust/issues/119206 is stabilized
-                //panic!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e)
+                //abort!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e)
             }
         };
     }
 
-    _ = sys::write(sys::STDOUT, b"No viable binary to execute found!\n");
+    abort!(exit_code::TARGET_NO_VIABLE_BINARIES, "Target program has no viable binaries! Is it installed properly?")
 }
 
+struct PrintBuff<'a> {
+    buf: &'a mut [u8],
+    offset: usize,
+}
+
+impl<'a> PrintBuff<'a> {
+    fn new(buf: &'a mut [u8]) -> Self {
+        PrintBuff {
+            buf,
+            offset: 0,
+        }
+    }
+}
+
+impl<'a> tfmt::uWrite for PrintBuff<'a> {
+    type Error = ();
+
+    fn write_str(&mut self, s: &str) -> Result<(), ()> {
+        let bytes = s.as_bytes();
+
+        // Skip over already-copied data
+        let remainder = &mut self.buf[self.offset..];
+        // Check if there is space remaining (return error instead of panicking)
+        if remainder.len() < bytes.len() { return Err(()); }
+        // Make the two slices the same length
+        let remainder = &mut remainder[..bytes.len()];
+        // Copy
+        remainder.copy_from_slice(bytes);
+
+        // Update offset to avoid overwriting
+        self.offset += bytes.len();
+
+        Ok(())
+    }
+}
+
+#[macro_export] macro_rules! abort {
+    ($exit_code:expr) => {{
+        print!(b"An error has occured!\n");
+        sys::exit($exit_code)
+    }};
+    ($exit_code:expr, $($arg:tt)*) => {{
+        print!($($arg)*);
+        sys::exit($exit_code)
+    }}
+}
+
+#[macro_export] macro_rules! print {
+    ($($arg:tt)*) => {{
+        let mut buffer = [0; 1024];
+        let mut writer = PrintBuff::new(&mut buffer);
+        _ = tfmt::uwriteln!(&mut writer, $($arg)*);
+
+        write_message!(&mut buffer);
+    }}
+}
