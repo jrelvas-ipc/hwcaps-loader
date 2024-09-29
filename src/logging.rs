@@ -12,28 +12,39 @@ impl<'a> PrintBuff<'a> {
     }
 }
 
+macro_rules! write_str {
+    ($($arg:tt)*) => {
+        fn write_str(&mut self, s: &str) -> Result<(), $($arg)*> {
+            let bytes = s.as_bytes();
+
+            unsafe {
+                // Skip over already-copied data
+                let remainder = self.buf.get_unchecked_mut(self.offset..);
+                // Check if there is space remaining (return error instead of panicking)
+                if remainder.len() < bytes.len() { return Err($($arg)*); }
+                // Make the two slices the same length
+                let remainder = remainder.get_unchecked_mut(..bytes.len());
+                // Copy
+                remainder.copy_from_slice(bytes);
+
+                // Update offset to avoid overwriting
+                self.offset += bytes.len();
+            }
+
+            Ok(())
+        }
+    };
+}
+
+
 impl<'a> tfmt::uWrite for PrintBuff<'a> {
     type Error = ();
 
-    fn write_str(&mut self, s: &str) -> Result<(), ()> {
-        let bytes = s.as_bytes();
+    write_str!(());
+}
 
-        unsafe {
-            // Skip over already-copied data
-            let remainder = self.buf.get_unchecked_mut(self.offset..);
-            // Check if there is space remaining (return error instead of panicking)
-            if remainder.len() < bytes.len() { return Err(()); }
-            // Make the two slices the same length
-            let remainder = remainder.get_unchecked_mut(..bytes.len());
-            // Copy
-            remainder.copy_from_slice(bytes);
-
-            // Update offset to avoid overwriting
-            self.offset += bytes.len();
-        }
-
-        Ok(())
-    }
+impl<'a> core::fmt::Write for PrintBuff<'a> {
+    write_str!(core::fmt::Error);
 }
 
 #[macro_export] macro_rules! abort {

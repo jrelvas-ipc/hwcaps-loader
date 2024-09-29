@@ -15,7 +15,6 @@ codegen-units = 1
 
 [dependencies]
 memchr = { version = "2", default-features = false }
-arrayvec = { version = "0.7", default-features = false }
 bitflags = { version = "2" }
 syscalls = { version = "0.6", default-features = false }
 tfmt = { version = "0.4" }

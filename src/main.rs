@@ -35,7 +35,6 @@ use core::fmt::Write;
 use core::slice;
 
 use memchr::{memchr, memrchr};
-use arrayvec::ArrayString;
 use logging::PrintBuff;
 
 mod exit_code {
@@ -73,12 +72,12 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     let message = _info.message();
     let location = _info.location().unwrap();
 
-    //Don't allocate to the heap...
-    let mut string = ArrayString::<1024>::new();
+    let mut buffer = [0; 1024];
+    let mut writer = PrintBuff::new(&mut buffer);
 
-    let _ = write!(&mut string, "Error: {message}\nAt: {location}\n");
-    let _ = sys::write(sys::STDOUT, &string.as_bytes());
+    let _ = write!(&mut writer, "Error: {message}\nAt: {location}\n");
 
+    write_message!(&buffer);
     sys::exit(exit_code::RUST_PANIC)
 }
 
