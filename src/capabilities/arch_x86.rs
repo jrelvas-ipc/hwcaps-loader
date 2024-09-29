@@ -1,3 +1,4 @@
+#![allow(unused_variables)]
 use bitflags::bitflags;
 use core::arch::asm;
 
