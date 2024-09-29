@@ -304,17 +304,19 @@ impl<'a> tfmt::uWrite for PrintBuff<'a> {
     fn write_str(&mut self, s: &str) -> Result<(), ()> {
         let bytes = s.as_bytes();
 
-        // Skip over already-copied data
-        let remainder = &mut self.buf[self.offset..];
-        // Check if there is space remaining (return error instead of panicking)
-        if remainder.len() < bytes.len() { return Err(()); }
-        // Make the two slices the same length
-        let remainder = &mut remainder[..bytes.len()];
-        // Copy
-        remainder.copy_from_slice(bytes);
+        unsafe {
+            // Skip over already-copied data
+            let remainder = self.buf.get_unchecked_mut(self.offset..);
+            // Check if there is space remaining (return error instead of panicking)
+            if remainder.len() < bytes.len() { return Err(()); }
+            // Make the two slices the same length
+            let remainder = remainder.get_unchecked_mut(..bytes.len());
+            // Copy
+            remainder.copy_from_slice(bytes);
 
-        // Update offset to avoid overwriting
-        self.offset += bytes.len();
+            // Update offset to avoid overwriting
+            self.offset += bytes.len();
+        }
 
         Ok(())
     }
