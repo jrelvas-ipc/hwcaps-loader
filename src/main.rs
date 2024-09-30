@@ -75,13 +75,13 @@ fn get_arg_string(ptr: *const c_char) -> &'static str {
 
 }
 
-fn get_exec_path(buffer: &mut [u8]) -> (usize, usize, usize) {
-    let exec_size = match sys::readlink(c"/proc/self/exe", buffer) {
+fn get_loader_path(buffer: &mut [u8]) -> (usize, usize, usize) {
+    let loader_size = match sys::readlink(c"/proc/self/exe", buffer) {
         Ok(p) => p,
         Err(e) => abort!(exit_code::PROC_PATH_IO_ERROR, "Loader path: IO Error! ({})", e.into_raw())
     };
 
-    if !(exec_size > 0 ){
+    if !(loader_size > 0 ){
         abort!(exit_code::PROC_PATH_EMPTY, "Loader path: Empty!")
     }
 
@@ -95,7 +95,7 @@ fn get_exec_path(buffer: &mut [u8]) -> (usize, usize, usize) {
         _ => abort!(exit_code::PROC_PATH_NO_GRANDPARENT, "Loader path: Invalid ancestry!")
     };
 
-    (exec_size, last_dash, second_last_dash)
+    (loader_size, last_dash, second_last_dash)
 }
 
 fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
@@ -131,17 +131,17 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
 
 #[no_mangle]
 pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) -> ! {
-    // We cheat here - argv0 and exec_path have a null terminator
+    // We cheat here - argv0 and loader_path have a null terminator
     // (makes it easier to interface with C code without useless copies)
     // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
     let argv0 = get_arg_string(unsafe { *argv });
 
-    let mut exec_path = [0; sys::MAX_PATH_LEN as usize];
-    let (exec_len, bin_index, usr_index) = get_exec_path(&mut exec_path);
+    let mut loader_path = [0; sys::MAX_PATH_LEN as usize];
+    let (loader_len, bin_index, usr_index) = get_loader_path(&mut loader_path);
 
     //Make sure we're not trying to execute ourselves!
     #[cfg(feature = "self_execution_check")]
-    if argv0.as_bytes().ends_with(&exec_path[bin_index+1..exec_len+1]){
+    if argv0.as_bytes().ends_with(&loader_path[bin_index+1..loader_len+1]){
         abort!(exit_code::SELF_EXECUTION, "Recursion error! Do not run the loader directly!")
     }
 
@@ -151,17 +151,17 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // Set cwd to our binary's parent (normally /usr/bin)
     if !argv0.starts_with("/") && !argv0.starts_with("./") && !argv0.starts_with("../") {
         //Sneakily put a null byte here without making a new string
-        let byte = exec_path[bin_index + 1];
-        exec_path[bin_index + 1] = b'\0';
+        let byte = loader_path[bin_index + 1];
+        loader_path[bin_index + 1] = b'\0';
 
-        let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(&exec_path) };
+        let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(&loader_path) };
 
         cwd = match sys::openat(sys::AT_FDCWD, c_str, sys::O_PATH) {
             Ok(d) => d,
             Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution: IO error while determining cwd! ({})", e.into_raw())
         };
         //Restore the previous character
-        exec_path[bin_index + 1] = byte;
+        loader_path[bin_index + 1] = byte;
     }
 
     let mut buffer = [0; sys::MAX_PATH_LEN as usize];
@@ -172,7 +172,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     let second_half = &argv0[usr_index..argv0_len];
 
     // Check if our target's on a valid location
-    if first_half != &exec_path[..usr_index + 1] {
+    if first_half != &loader_path[..usr_index + 1] {
         abort!(exit_code::TARGET_PATH_INVALID, "Target: Invalid location!")
     }
 
@@ -187,7 +187,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     // Very hacky and unsafe code :)
     // We can reuse the string we already have instead of allocating a new one, saving on time.
-    let mut target_path = exec_path;
+    let mut target_path = loader_path;
 
     // We've already determined the path starts with this, so we can just skip over that
     let start = usr_index+1;
