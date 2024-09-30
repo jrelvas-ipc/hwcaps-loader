@@ -24,7 +24,7 @@
 //#![feature(c_size_t)]
 //#![feature(str_from_raw_parts)]
 
-#![feature(naked_functions)]
+#![cfg_attr(target_os="none", feature(naked_functions))]
 
 mod sys;
 mod capabilities;
@@ -157,7 +157,6 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
         Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution error! Failed to get path of FD \"{}\"! (errno: {})", fd, e.into_raw())
     }
 }
-
 
 #[cfg(target_os="none")]
 #[naked]
