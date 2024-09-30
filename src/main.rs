@@ -158,7 +158,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
         cwd = match sys::openat(sys::AT_FDCWD, c_str, sys::O_PATH) {
             Ok(d) => d,
-            Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution: IO error while determing cwd! ({})", e.into_raw())
+            Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution: IO error while determining cwd! ({})", e.into_raw())
         };
         //Restore the previous character
         exec_path[bin_index + 1] = byte;
