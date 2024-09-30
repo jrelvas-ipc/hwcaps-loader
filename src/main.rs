@@ -211,7 +211,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // We've already determined the path starts with this, so we can just skip over that
     let start = usr_index+1;
     let end = start+hwcaps_dir.len();
-    target_path[start..end].clone_from_slice(hwcaps_dir);
+    target_path[start..end].copy_from_slice(hwcaps_dir);
     let start = end;
 
     let mut must_format_arch = true;
@@ -244,7 +244,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
             let start = start + arch_name_len;
             let end = start + second_half.len();
-            target_path[start..end].clone_from_slice(&second_half);
+            target_path[start..end].copy_from_slice(&second_half);
             target_path[end]= b'\0';
 
             must_format_arch = false;
