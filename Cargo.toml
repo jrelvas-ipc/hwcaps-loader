@@ -12,6 +12,7 @@ panic = "abort"
 lto = "fat" # https://github.com/rust-lang/rust/issues/47493#issuecomment-606385776
 strip = "symbols"
 codegen-units = 1
+#opt-level = "z"
 
 [dependencies]
 memchr = { version = "2", default-features = false }

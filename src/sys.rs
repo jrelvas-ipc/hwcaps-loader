@@ -45,6 +45,7 @@ pub const O_CLOEXEC: c_int = 0x80000;
 
 pub const ENOENT: c_int = 2;
 
+#[cfg(not(target_os="none"))]
 #[link(name = "c")]
 extern "C" {
 }

@@ -24,6 +24,8 @@
 //#![feature(c_size_t)]
 //#![feature(str_from_raw_parts)]
 
+#![feature(naked_functions)]
+
 mod sys;
 mod capabilities;
 mod logging;
@@ -148,8 +150,34 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
 }
 
 
+#[cfg(target_os="none")]
+#[naked]
 #[no_mangle]
-pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) {
+pub unsafe extern "C" fn _start() -> ! {
+    // Jump to `entry`, passing it the initial stack pointer value as an
+    // argument, a null return address, a null frame pointer, and an aligned
+    // stack pointer. On many architectures, the incoming frame pointer is
+    // already null.
+    core::arch::asm!(
+        "mov rdi, rsp", // Pass the incoming `rsp` as the arg to `entry`.
+        "push rbp",     // Set the return address to zero.
+        "jmp {entry}",  // Jump to `entry`.
+        entry = sym _main_proxy,
+        options(noreturn),
+    )
+}
+
+pub unsafe extern "C" fn _main_proxy(mem: *const usize) -> ! {
+    let kernel_argc = *mem;
+    let argc = kernel_argc as i32;
+
+    let argv = mem.add(1).cast::<*const c_char>();
+    let envp = argv.add(argc as c_char as usize + 1);
+
+    main(argc as i32, argv, envp)
+}
+#[no_mangle]
+pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) -> ! {
     // We cheat here - argv0 and exec_path have a null terminator
     // (makes it easier to interface with C code without useless copies)
     // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
