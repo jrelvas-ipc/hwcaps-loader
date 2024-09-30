@@ -109,21 +109,21 @@ fn get_arg_string(ptr: *const c_char) -> &'static str {
 fn get_exec_path(buffer: &mut [u8]) -> (usize, usize, usize) {
     let exec_size = match sys::readlink(c"/proc/self/exe", buffer) {
         Ok(p) => p,
-        Err(e) => abort!(exit_code::PROC_PATH_IO_ERROR, "Failed to read exec magic link! (errno: {})", e.into_raw())
+        Err(e) => abort!(exit_code::PROC_PATH_IO_ERROR, "Loader path: IO Error! ({})", e.into_raw())
     };
 
     if !(exec_size > 0 ){
-        abort!(exit_code::PROC_PATH_EMPTY, "Exec magic link leads to empty path!")
+        abort!(exit_code::PROC_PATH_EMPTY, "Loader path: Empty!")
     }
 
     let last_dash = match memrchr(b'/', &buffer) {
         Some(i) => i,
-        _ => abort!(exit_code::PROC_PATH_NO_PARENT, "Exec magic link has no parent!")
+        _ => abort!(exit_code::PROC_PATH_NO_PARENT, "Loader path: Invalid ancestry!")
     };
 
     let second_last_dash = match memrchr(b'/', &buffer[..last_dash]) {
         Some(i) => i,
-        _ => abort!(exit_code::PROC_PATH_NO_GRANDPARENT, "Exec magic link has no grandparent!")
+        _ => abort!(exit_code::PROC_PATH_NO_GRANDPARENT, "Loader path: Invalid ancestry!")
     };
 
     (exec_size, last_dash, second_last_dash)
