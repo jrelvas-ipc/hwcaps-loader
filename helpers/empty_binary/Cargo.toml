@@ -1,0 +1,12 @@
+[package]
+name = "empty_binary"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+syscalls = { version = "0.6", default-features = false }
+
+[[bin]]
+name = "empty_binary"
+path = "main.rs"
+test = false

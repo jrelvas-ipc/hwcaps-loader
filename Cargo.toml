@@ -1,3 +1,6 @@
+[workspace]
+members = [ "helpers/empty_binary" ]
+
 [package]
 name = "hwcaps-loader"
 version = "0.2.0"
@@ -19,6 +22,9 @@ memchr = { version = "2", default-features = false }
 bitflags = { version = "2" }
 syscalls = { version = "0.6", default-features = false }
 tfmt = { version = "0.4" }
+
+[workspace.dependencies]
+empty_binary = { path = "tests/empty_binary" }
 
 [features]
 default = [ "self_execution_check" ]
