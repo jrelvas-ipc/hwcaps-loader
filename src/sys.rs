@@ -23,17 +23,16 @@ use core::ffi::c_int;
 //use core::ffi::c_ssize_t;
 use core::ffi::c_char;
 use core::ffi::CStr;
-use core::cell;
 
 use syscalls::{Sysno, syscall, Errno};
 
 //TODO: remove this when https://github.com/rust-lang/rust/issues/88345 is stabilized
-#[allow(non_camel_case_types)]
-type c_size_t = usize;
+//#[allow(non_camel_case_types)]
+//type c_size_t = usize;
 #[allow(non_camel_case_types)]
 type c_ssize_t = isize;
 
-pub const MAX_ARG_LEN: c_size_t = 131072;
+//pub const MAX_ARG_LEN: c_size_t = 131072;
 pub const MAX_PATH_LEN: c_ssize_t = 4096;
 
 pub const STDOUT: c_int = 1;
@@ -44,11 +43,6 @@ pub const O_PATH: c_int = 0o10000000;
 pub const O_CLOEXEC: c_int = 0x80000;
 
 pub const ENOENT: c_int = 2;
-
-#[cfg(not(target_os="none"))]
-#[link(name = "c")]
-extern "C" {
-}
 
 #[inline]
 pub fn exit(code: i32) -> ! {

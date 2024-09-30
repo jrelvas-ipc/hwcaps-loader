@@ -30,10 +30,11 @@ mod sys;
 mod capabilities;
 mod logging;
 
+mod init;
+
 use core::str;
 use core::ffi::c_char;
 use core::ffi::CStr;
-use core::fmt::Write;
 use core::slice;
 
 use memchr::{memchr, memrchr};
@@ -58,38 +59,6 @@ mod exit_code {
     def!(TARGET_PATH_TOO_LARGE, -70241);
     def!(TARGET_EXECUTION_ERROR, -70242);
     def!(TARGET_NO_VIABLE_BINARIES, -70243);
-}
-
-//TODO: use when https://doc.rust-lang.org/unstable-book/language-features/lang-items.html stabilizes
-//#[lang = "eh_personality"]
-//extern "C" fn eh_personality() {}
-
-//Workarounds for https://github.com/rust-lang/rust/issues/106864
-#[no_mangle]
-extern "C" fn rust_eh_personality() {}
-
-#[cfg(debug_assertions)]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    let message = _info.message();
-    let location = _info.location().unwrap();
-
-    let mut buffer = [0; 1024];
-    let mut writer = PrintBuff::new(&mut buffer);
-
-    let _ = write!(&mut writer, "Error: {message}\nAt: {location}\n");
-
-    write_message!(&buffer);
-    sys::exit(exit_code::RUST_PANIC)
-}
-
-#[cfg(not(debug_assertions))]
-// We can't do panic on production...
-// core::fmt increases binary size by an obscene amount
-// and we can't use tfmt because PanicInfo is too tied to core::fmt
-#[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
-    sys::exit(exit_code::RUST_PANIC)
 }
 
 fn get_arg_string(ptr: *const c_char) -> &'static str {
@@ -160,32 +129,6 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
     }
 }
 
-#[cfg(target_os="none")]
-#[naked]
-#[no_mangle]
-pub unsafe extern "C" fn _start() -> ! {
-    // Jump to `entry`, passing it the initial stack pointer value as an
-    // argument, a null return address, a null frame pointer, and an aligned
-    // stack pointer. On many architectures, the incoming frame pointer is
-    // already null.
-    core::arch::asm!(
-        "mov rdi, rsp", // Pass the incoming `rsp` as the arg to `entry`.
-        "push rbp",     // Set the return address to zero.
-        "jmp {entry}",  // Jump to `entry`.
-        entry = sym _main_proxy,
-        options(noreturn),
-    )
-}
-
-pub unsafe extern "C" fn _main_proxy(mem: *const usize) -> ! {
-    let kernel_argc = *mem;
-    let argc = kernel_argc as i32;
-
-    let argv = mem.add(1).cast::<*const c_char>();
-    let envp = argv.add(argc as c_char as usize + 1);
-
-    main(argc as i32, argv, envp)
-}
 #[no_mangle]
 pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) -> ! {
     // We cheat here - argv0 and exec_path have a null terminator
@@ -254,6 +197,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     let mut must_format_arch = true;
     let mut version_char_index: usize = 0;
+    #[allow(unused_assignments)]
     let mut path_len = 0;
 
     // Determine the maximum feature level supported by this machine
