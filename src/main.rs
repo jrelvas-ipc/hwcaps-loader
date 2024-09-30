@@ -49,15 +49,15 @@ mod exit_code {
     def!(RUST_PANIC, -70100);
     def!(SELF_EXECUTION, -70200);
     def!(COMMAND_PATH_INVALID, -70210);
-    def!(COMMAND_PATH_INVALID_ANCESTOR, -70211);
     def!(PROC_PATH_IO_ERROR, -70220);
     def!(PROC_PATH_EMPTY, -70221);
     def!(PROC_PATH_NO_PARENT, -70222);
     def!(PROC_PATH_NO_GRANDPARENT, -70223);
     def!(PATH_RESOLUTION_IO_ERROR, -70230);
-    def!(TARGET_PATH_TOO_LARGE, -70240);
-    def!(TARGET_EXECUTION_ERROR, -70241);
-    def!(TARGET_NO_VIABLE_BINARIES, -70242);
+    def!(TARGET_PATH_INVALID, -70240);
+    def!(TARGET_PATH_TOO_LARGE, -70241);
+    def!(TARGET_EXECUTION_ERROR, -70242);
+    def!(TARGET_NO_VIABLE_BINARIES, -70243);
 }
 
 //TODO: use when https://doc.rust-lang.org/unstable-book/language-features/lang-items.html stabilizes
@@ -199,7 +199,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     //Make sure we're not trying to execute ourselves!
     #[cfg(feature = "self_execution_check")]
     if argv0.as_bytes().ends_with(&exec_path[bin_index+1..exec_len+1]){
-        abort!(exit_code::SELF_EXECUTION, "Cannot execute own binary!")
+        abort!(exit_code::SELF_EXECUTION, "Recursion error! Do not run the loader directly!")
     }
 
     let mut cwd = sys::AT_FDCWD;
@@ -215,7 +215,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
         cwd = match sys::openat(sys::AT_FDCWD, c_str, sys::O_PATH) {
             Ok(d) => d,
-            Err(e) => abort!(exit_code::COMMAND_PATH_INVALID_ANCESTOR, "Failed to open parent! (errno: {})", e.into_raw())
+            Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution: IO error while determing cwd! ({})", e.into_raw())
         };
         //Restore the previous character
         exec_path[bin_index + 1] = byte;
@@ -230,7 +230,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     // Check if our target's on a valid location
     if first_half != &exec_path[..usr_index + 1] {
-        panic!("hwcaps-loader symlink does not belong to its grandparent!")
+        abort!(exit_code::TARGET_PATH_INVALID, "Target: Invalid location!")
     }
 
     // Prepare execution target path
@@ -239,7 +239,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     let base_length = first_half.len() + hwcaps_dir.len();
     if base_length > sys::MAX_PATH_LEN as usize {
-        abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target path is too large!")
+        abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target: Path too large!")
     }
 
     // Very hacky and unsafe code :)
@@ -271,13 +271,13 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         if must_format_arch {
             let (relative_char_index, arch_name_len) = match capabilities::format_arch_name(&mut target_path[end..], i) {
                 Ok(v) => v,
-                Err(_) => abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target path is too large!"),
+                Err(_) => abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target: Path too large!"),
             };
             version_char_index = relative_char_index + end;
 
             path_len = base_length + arch_name_len + second_half.len() + 1;
             if path_len > sys::MAX_PATH_LEN as usize {
-                abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target path is too large!")
+                abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target: Path too large!")
             }
 
             let start = start + arch_name_len;
@@ -297,7 +297,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
                 let slice = slice::from_raw_parts(target_path.as_ptr(), path_len);
                 str::from_utf8_unchecked(slice)
             };
-            print!("(DEBUG) Executing: {}\n", path_string);
+            print!("(DEBUG) Target: Executing: {}\n", path_string);
         }
 
         let str_ptr = target_path.as_ptr() as *const i8;
@@ -310,7 +310,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
                     let slice = slice::from_raw_parts(target_path.as_ptr(), end);
                     str::from_utf8_unchecked(slice)
                 };
-                abort!(exit_code::TARGET_EXECUTION_ERROR, "Failed to execute binary at \"{}\"! (errno: {})", path_string, other)
+                abort!(exit_code::TARGET_EXECUTION_ERROR, "Target: Execution error for \"{}\"! ({})", path_string, other)
 
                 //TODO: Use this when https://github.com/rust-lang/rust/issues/119206 is stabilized
                 //abort!("Failed to execute program \"{}\"! (errno: {})", unsafe {str::from_raw_parts(target_path.as_ptr(), end)}, e)
@@ -318,5 +318,5 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         };
     }
 
-    abort!(exit_code::TARGET_NO_VIABLE_BINARIES, "Target program has no viable binaries! Is it installed properly?")
+    abort!(exit_code::TARGET_NO_VIABLE_BINARIES, "Target: No viable binaries for loading... Is the target program installed properly?")
 }
