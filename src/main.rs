@@ -115,7 +115,7 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
     let path = if fd == 3 {
         "/dev/fd/3\0"
     } else {
-        path_buffer = [0; 1024];
+        path_buffer = [0; 128];
         let mut writer = PrintBuff::new(&mut path_buffer);
 
         _ = tfmt::uwrite!(&mut writer, "/dev/fd/{}\0", fd);
