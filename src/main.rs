@@ -95,7 +95,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 fn get_arg_string(ptr: *const c_char) -> &'static str {
     // argv0 can technically be larger than this, but any value which is larger
     // than a path is worthless to us anyways!
-    let arg_slice = unsafe { slice::from_raw_parts(ptr as *mut u8, sys::MAX_PATH_LEN) };
+    let arg_slice = unsafe { slice::from_raw_parts(ptr as *mut u8, sys::MAX_PATH_LEN as usize) };
 
     let terminator_index = match memchr(b'\0', &arg_slice) {
         Some(i) => i,
