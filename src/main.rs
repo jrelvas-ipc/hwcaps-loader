@@ -144,12 +144,12 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
     // use a fast path for fd 3, while including a formatting fallback for other FDs.
     let mut fd_path;
     let c_str = if fd == 3 {
-        c"/proc/self/fd/3"
+        c"/dev/fd/3"
     } else {
         fd_path = [0; 1024];
         let mut writer = PrintBuff::new(&mut fd_path);
 
-        _ = tfmt::uwrite!(&mut writer, "/proc/self/fd/{}\0", fd);
+        _ = tfmt::uwrite!(&mut writer, "/dev/fd/{}\0", fd);
         unsafe { CStr::from_bytes_with_nul_unchecked(&fd_path) }
     };
 
