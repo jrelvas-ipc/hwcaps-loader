@@ -114,40 +114,41 @@ the user (or a misbehaving program) intentionally passes an incorrect `argv0` (c
 or attempts to execute it directly, without going through a symlink.
 
 `hwcaps-loader` uses long, specific exit codes in an attempt to differentiate from exit codes
-given by other programs and aid with debugging. Here's a list of possible codes and their
-meanings:
+given by other programs and aid with debugging, however, due to its nature, it might be
+difficult to differentiate them from the target program. When in doubt, run `strace`.
+Here's a list of possible codes and their meanings:
 
-- `-70100` - `RUST_PANIC`:  
+- `100` - `RUST_PANIC`:  
 Rust Panic occured. This should be impossible. If it happens, then it's a nasty bug.
 Use the devel profile to print out panic messages.
-- `-70200` - `SELF_EXECUTION`:  
+- `200` - `SELF_EXECUTION`:  
 `execve()` was called on `hwcaps-loader` directly instead of one its symlinks, which would
 result in recursion. `hwcaps-loader` should *never* be a part of this mechanism.
-- `-70210` - `COMMAND_PATH_INVALID`:  
+- `210` - `COMMAND_PATH_INVALID`:  
 the `argv0` passed to hwcaps-loader has no null terminator by index 4096, making it an
 invalid path. Generally doesn't happen unless a misbehaving program attempts to run.
-- `-70220` - `PROC_PATH_IO_ERROR`:  
+- `220` - `PROC_PATH_IO_ERROR`:  
 An IO error occured while attempting to read `/self/proc/exe`. This only happens if
 the system is missing support for this magic link or if it's buggy.
-- `-70221` - `PROC_PATH_EMPTY`:  
+- `221` - `PROC_PATH_EMPTY`:  
 The path returned by `/self/proc/exe` is empty.
-- `-70222` - `PROC_PATH_NO_PARENT` :  
+- `222` - `PROC_PATH_NO_PARENT` :  
 The path returned by `/self/proc/exe`, has no parent. `hwcaps-loader` should be located
 at least two levels deep in the FS (`/usr/bin/hwcaps-loader`).
-- `-70223` - `PROC_PATH_NO_GRANDPARENT`:  
+- `223` - `PROC_PATH_NO_GRANDPARENT`:  
 Read above.
-- `-70230` - `PATH_RESOLUTION_IO_ERROR`:  
+- `230` - `PATH_RESOLUTION_IO_ERROR`:  
 An IO error occured while attempting to use FS syscalls to resolve the absolute path.
 Generally only happens if invalid values are passes to `hwcaps-loader`, the system is buggy,
 or there's a problem with the filesystem.
-- `-70240` - `TARGET_PATH_INVALID`:  
+- `240` - `TARGET_PATH_INVALID`:  
 The target path formed by `hwcaps-loader` must share the same ancestry as `hwcaps-loader` itself.
 For example,
-- `-70241` - `TARGET_PATH_TOO_LARGE`:  
+- `241` - `TARGET_PATH_TOO_LARGE`:  
 The target path is too large and doesn't fit in 4096 bytes.
-- `-70242` - `TARGET_EXECUTION_ERROR`:  
+- `242` - `TARGET_EXECUTION_ERROR`:  
 An unknown IO error occured while attempting to `execve()` the target path. If this
 occurs, something is wrong with your packaging or the filesystem is borked.
-- `-70243` - `TARGET_NO_VIABLE_BINARIES`:  
+- `243` - `TARGET_NO_VIABLE_BINARIES`:  
 `hwcaps-loader` exhausted all possible target paths, and none of them existed. If this
 occurs, something is wrong with your packaging or the filesystem is borked.

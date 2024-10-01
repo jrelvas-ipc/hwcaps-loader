@@ -47,18 +47,18 @@ mod exit_code {
         };
     }
 
-    def!(RUST_PANIC, -70100);
-    def!(SELF_EXECUTION, -70200);
-    def!(COMMAND_PATH_INVALID, -70210);
-    def!(PROC_PATH_IO_ERROR, -70220);
-    def!(PROC_PATH_EMPTY, -70221);
-    def!(PROC_PATH_NO_PARENT, -70222);
-    def!(PROC_PATH_NO_GRANDPARENT, -70223);
-    def!(PATH_RESOLUTION_IO_ERROR, -70230);
-    def!(TARGET_PATH_INVALID, -70240);
-    def!(TARGET_PATH_TOO_LARGE, -70241);
-    def!(TARGET_EXECUTION_ERROR, -70242);
-    def!(TARGET_NO_VIABLE_BINARIES, -70243);
+    def!(RUST_PANIC, 100);
+    def!(SELF_EXECUTION, 200);
+    def!(COMMAND_PATH_INVALID, 210);
+    def!(PROC_PATH_IO_ERROR, 220);
+    def!(PROC_PATH_EMPTY, 221);
+    def!(PROC_PATH_NO_PARENT, 222);
+    def!(PROC_PATH_NO_GRANDPARENT, 223);
+    def!(PATH_RESOLUTION_IO_ERROR, 230);
+    def!(TARGET_PATH_INVALID, 240);
+    def!(TARGET_PATH_TOO_LARGE, 241);
+    def!(TARGET_EXECUTION_ERROR, 242);
+    def!(TARGET_NO_VIABLE_BINARIES, 243);
 }
 
 fn get_arg_string(ptr: *const c_char) -> &'static str {
