@@ -23,9 +23,6 @@ bitflags = { version = "2" }
 syscalls = { version = "0.6", default-features = false }
 tfmt = { version = "0.4" }
 
-[workspace.dependencies]
-empty_binary = { path = "tests/empty_binary" }
-
 [features]
 default = [ "self_execution_check" ]
 self_execution_check = []
