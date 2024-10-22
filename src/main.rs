@@ -37,7 +37,7 @@ use core::ffi::c_char;
 use core::ffi::CStr;
 use core::slice;
 
-use memchr::{memchr, memrchr};
+use memchr::memchr;
 use logging::PrintBuff;
 
 mod exit_code {
@@ -51,15 +51,17 @@ mod exit_code {
     def!(SELF_EXECUTION, 200);
     def!(COMMAND_PATH_INVALID, 210);
     def!(PROC_PATH_IO_ERROR, 220);
-    def!(PROC_PATH_EMPTY, 221);
-    def!(PROC_PATH_NO_PARENT, 222);
-    def!(PROC_PATH_NO_GRANDPARENT, 223);
+    def!(PROC_PATH_INVALID, 221);
     def!(PATH_RESOLUTION_IO_ERROR, 230);
     def!(TARGET_PATH_INVALID, 240);
     def!(TARGET_PATH_TOO_LARGE, 241);
     def!(TARGET_EXECUTION_ERROR, 242);
     def!(TARGET_NO_VIABLE_BINARIES, 243);
 }
+
+static HWCAPS_PATH: &'static [u8] = b"/usr/hwcaps/";
+//const USR_PATH: &'static [u8] = &HWCAPS_PATH[..4];
+static BIN_PATH: &'static [u8] = b"/usr/bin/";
 
 fn get_arg_string(ptr: *const c_char) -> &'static str {
     // argv0 can technically be larger than this, but any value which is larger
@@ -75,27 +77,18 @@ fn get_arg_string(ptr: *const c_char) -> &'static str {
 
 }
 
-fn get_loader_path(buffer: &mut [u8]) -> (usize, usize, usize) {
+fn get_loader_path(buffer: &mut [u8]) -> usize {
     let loader_size = match sys::readlink(c"/proc/self/exe", buffer) {
         Ok(p) => p,
         Err(e) => abort!(exit_code::PROC_PATH_IO_ERROR, "Loader path: IO Error! ({})", e.into_raw())
     };
 
-    if !(loader_size > 0 ){
-        abort!(exit_code::PROC_PATH_EMPTY, "Loader path: Empty!")
+    // It's safe to do this because the buffers passed to this function are always 4096 bytes
+    if unsafe { buffer.get_unchecked(..BIN_PATH.len()) } != BIN_PATH {
+        abort!(exit_code::PROC_PATH_INVALID, "Loader path: Invalid location!")
     }
 
-    let last_dash = match memrchr(b'/', &buffer) {
-        Some(i) => i,
-        _ => abort!(exit_code::PROC_PATH_NO_PARENT, "Loader path: Invalid ancestry!")
-    };
-
-    let second_last_dash = match memrchr(b'/', &buffer[..last_dash]) {
-        Some(i) => i,
-        _ => abort!(exit_code::PROC_PATH_NO_GRANDPARENT, "Loader path: Invalid ancestry!")
-    };
-
-    (loader_size, last_dash, second_last_dash)
+    loader_size
 }
 
 fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
@@ -131,18 +124,31 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
 
 #[no_mangle]
 pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) -> ! {
+    //Workaround for rust not supporting static declaration from other statics
+    #[allow(non_snake_case)]
+    let USR_PATH: &'static [u8] = unsafe { slice::from_raw_parts(HWCAPS_PATH.as_ptr(), 4) };
+
     // We cheat here - argv0 and loader_path have a null terminator
     // (makes it easier to interface with C code without useless copies)
     // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
     let argv0 = get_arg_string(unsafe { *argv });
 
     let mut loader_path = [0; sys::MAX_PATH_LEN as usize];
-    let (loader_len, bin_index, usr_index) = get_loader_path(&mut loader_path);
+    let loader_len = get_loader_path(&mut loader_path);
+    let bin_index = BIN_PATH.len();
+    let usr_index = USR_PATH.len();
 
     //Make sure we're not trying to execute ourselves!
     #[cfg(feature = "self_execution_check")]
-    if argv0.as_bytes().ends_with(&loader_path[bin_index+1..loader_len+1]){
-        abort!(exit_code::SELF_EXECUTION, "Recursion error! Do not run the loader directly!")
+    {
+        let without_terminator = unsafe {
+            let bytes = argv0.as_bytes();
+            bytes.get_unchecked(..bytes.len()-1)
+        };
+
+        if without_terminator.ends_with(&loader_path[bin_index..loader_len]){
+            abort!(exit_code::SELF_EXECUTION, "Recursion error! Do not run the loader directly!")
+        }
     }
 
     let mut cwd = sys::AT_FDCWD;
@@ -151,8 +157,8 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // Set cwd to our binary's parent (normally /usr/bin)
     if !argv0.starts_with("/") && !argv0.starts_with("./") && !argv0.starts_with("../") {
         //Sneakily put a null byte here without making a new string
-        let byte = loader_path[bin_index + 1];
-        loader_path[bin_index + 1] = b'\0';
+        let byte = loader_path[bin_index];
+        loader_path[bin_index] = b'\0';
 
         let c_str = unsafe { CStr::from_bytes_with_nul_unchecked(&loader_path) };
 
@@ -161,39 +167,41 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
             Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution: IO error while determining cwd! ({})", e.into_raw())
         };
         //Restore the previous character
-        loader_path[bin_index + 1] = byte;
+        loader_path[bin_index] = byte;
     }
 
-    let mut buffer = [0; sys::MAX_PATH_LEN as usize];
-    let argv0_len = resolve_path(cwd, argv0, &mut buffer);
-    let argv0 = buffer;
+    let mut cmd_path = [0; sys::MAX_PATH_LEN as usize];
+    let cmd_path_len = resolve_path(cwd, argv0, &mut cmd_path);
 
-    let first_half = &argv0[..usr_index+1];
-    let second_half = &argv0[usr_index..argv0_len];
+    // cmd_path_len+1 must fit in cmd_path, because of the terminator.
+    if cmd_path_len+1 >= cmd_path.len() {
+        abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target: Path too large!")
+    }
 
-    // Check if our target's on a valid location
-    if first_half != &loader_path[..usr_index + 1] {
+    // These aren't problematic because argv0 is guaranteed to be  bytes long
+    let cmd_path_usr_slice = unsafe { cmd_path.get_unchecked(..usr_index) };
+    let cmd_path_bin_slice = unsafe { cmd_path.get_unchecked(usr_index..cmd_path_len+1) };
+
+    // Check if our target's on /usr/
+    if cmd_path_usr_slice != USR_PATH {
         abort!(exit_code::TARGET_PATH_INVALID, "Target: Invalid location!")
     }
 
     // Prepare execution target path
-    // TODO: Determine capabilities/featureset of CPU and choose the featureset directory based on that.
-    let hwcaps_dir = b"hwcaps/";
-
-    let base_length = first_half.len() + hwcaps_dir.len();
-    if base_length > sys::MAX_PATH_LEN as usize {
-        abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target: Path too large!")
-    }
-
+    let base_length = HWCAPS_PATH.len();
     // Very hacky and unsafe code :)
     // We can reuse the string we already have instead of allocating a new one, saving on time.
     let mut target_path = loader_path;
 
-    // We've already determined the path starts with this, so we can just skip over that
-    let start = usr_index+1;
-    let end = start+hwcaps_dir.len();
-    target_path[start..end].copy_from_slice(hwcaps_dir);
-    let start = end;
+    // We've already determined the path starts with /usr/, so we only need to copy from hwcaps/
+    // Copy the part of the path which we won't be changing anymore
+    let copy_index = unsafe {
+        let src = HWCAPS_PATH.get_unchecked(usr_index..);
+        let copy_index = usr_index+src.len();
+        let dst = target_path.get_unchecked_mut(usr_index..usr_index+src.len());
+        dst.copy_from_slice(src);
+        copy_index
+    };
 
     let mut must_format_arch = true;
     let mut version_char_index: usize = 0;
@@ -213,21 +221,30 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
         // Format the second part of the path, which is dependent on the arch name.
         if must_format_arch {
-            let (relative_char_index, arch_name_len) = match capabilities::format_arch_name(&mut target_path[end..], i) {
+            let mut target_relative_slice = unsafe {
+                target_path.get_unchecked_mut(copy_index..)
+            };
+
+            let (relative_char_index, arch_name_len) = match capabilities::format_arch_name(&mut target_relative_slice, i) {
                 Ok(v) => v,
                 Err(_) => abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target: Path too large!"),
             };
-            version_char_index = relative_char_index + end;
+            version_char_index = relative_char_index + copy_index;
 
-            path_len = base_length + arch_name_len + second_half.len() + 1;
+            // Copy the relative bin path
+            // cmd_path_bin_slice already includes the null character!
+            path_len = base_length + arch_name_len + cmd_path_bin_slice.len() - 1;
+
             if path_len > sys::MAX_PATH_LEN as usize {
                 abort!(exit_code::TARGET_PATH_TOO_LARGE, "Target: Path too large!")
             }
 
-            let start = start + arch_name_len;
-            let end = start + second_half.len();
-            target_path[start..end].copy_from_slice(&second_half);
-            target_path[end]= b'\0';
+            unsafe {
+                let copy_index = copy_index + arch_name_len;
+                let src = cmd_path_bin_slice;
+                let dst = target_path.get_unchecked_mut(copy_index..copy_index + cmd_path_bin_slice.len());
+                dst.copy_from_slice(src);
+            }
 
             must_format_arch = false;
         }
@@ -251,7 +268,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
             sys::ENOENT => continue,
             other => {
                 let path_string = unsafe {
-                    let slice = slice::from_raw_parts(target_path.as_ptr(), end);
+                    let slice = slice::from_raw_parts(target_path.as_ptr(), path_len);
                     str::from_utf8_unchecked(slice)
                 };
                 abort!(exit_code::TARGET_EXECUTION_ERROR, "Target: Execution error for \"{}\"! ({})", path_string, other)

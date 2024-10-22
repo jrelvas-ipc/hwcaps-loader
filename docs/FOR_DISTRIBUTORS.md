@@ -128,22 +128,18 @@ result in recursion. `hwcaps-loader` should *never* be a part of this mechanism.
 the `argv0` passed to hwcaps-loader has no null terminator by index 4096, making it an
 invalid path. Generally doesn't happen unless a misbehaving program attempts to run.
 - `220` - `PROC_PATH_IO_ERROR`:  
-An IO error occured while attempting to read `/self/proc/exe`. This only happens if
-the system is missing support for this magic link or if it's buggy.
-- `221` - `PROC_PATH_EMPTY`:  
-The path returned by `/self/proc/exe` is empty.
-- `222` - `PROC_PATH_NO_PARENT` :  
-The path returned by `/self/proc/exe`, has no parent. `hwcaps-loader` should be located
-at least two levels deep in the FS (`/usr/bin/hwcaps-loader`).
-- `223` - `PROC_PATH_NO_GRANDPARENT`:  
-Read above.
+An IO error occured while attempting to read `/self/proc/exe`. This generally only happens if
+the system is missing support for this magic link or if it's buggy.  
+It could also be a sign of faulty sandboxing/containment.
+- `221` - `PROC_PATH_INVALID`:  
+The path returned by `/self/proc/exe` is invalid. The `hwcaps-loader` binary should
+always be in `/usr/bin/`.
 - `230` - `PATH_RESOLUTION_IO_ERROR`:  
 An IO error occured while attempting to use FS syscalls to resolve the absolute path.
-Generally only happens if invalid values are passes to `hwcaps-loader`, the system is buggy,
+Generally only happens if invalid values are passed to `hwcaps-loader`, the system is buggy,
 or there's a problem with the filesystem.
 - `240` - `TARGET_PATH_INVALID`:  
-The target path formed by `hwcaps-loader` must share the same ancestry as `hwcaps-loader` itself.
-For example,
+Target binaries being executed through `hwcaps-loader` must have `/usr` as an ancestor. 
 - `241` - `TARGET_PATH_TOO_LARGE`:  
 The target path is too large and doesn't fit in 4096 bytes.
 - `242` - `TARGET_EXECUTION_ERROR`:  
