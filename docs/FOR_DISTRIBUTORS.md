@@ -13,8 +13,8 @@ different properties and advantages...
 `x86_64-unknown-linux-gnu` -
 Build with glibc ABI and dynamic linking.
 
-- File Size: `~12.9 kB`
-- Speed: `340.8 µs ± 56.3 µs`
+- File Size: `~11.8 kB`
+- Speed: `269.6 µs ± 34.5 µs`
 - Runtime Dependencies: `glibc`
 - Build Dependencies: `glibc` + linker
 - Requires Rust Nightly: No
@@ -23,8 +23,8 @@ Build with glibc ABI and dynamic linking.
 `x86_64-unknown-linux-musl` -
 Build with musl ABI and static linking.
 
-- File Size: `~22.1 kB`
-- Speed: `163.7 µs ± 30.1 µs`
+- File Size: `~18.0 kB`
+- Speed: `120.9 µs ± 22.2 µs`
 - Runtime Dependencies: None!
 - Build Dependencies: `musl` + linker
 - Requires Rust Nightly: No
@@ -33,8 +33,8 @@ Build with musl ABI and static linking.
 `x86_64-unknown-none` -
 Build without libc, raw rust entry point.
 
-- File Size: `~9.7 kB`
-- Speed: `149.1 µs ± 28.6 µs`
+- File Size: `~7.9 kB`
+- Speed: `118.3 µs ± 20.3 µs`
 - Runtime Dependencies: None!
 - Build Dependencies: linker
 - Requires Rust Nightly: **Yes**
@@ -54,12 +54,20 @@ This will remove unnecessary panic formatting logic and make binaries slightly s
 Testing Metodology:
 ```
 OS: Fedora Linux 42 (Workstation Edition Prerelease)
-Kernel: Linux 6.12.0-0.rc0.20240920gitbaeb9a7d8b60.7.fc42.x86_64
+Kernel: Linux 6.12.0-0.rc3.20241019git3d5ad2d4eca3.37.fc42.x86_64
 CPU: 45W TDP Intel Core i7-13800H @ 2.50GHz (6P+8E 20T)
 Memory: 2 x 32GB DDR5-5600 @ 5200 MT/s (Intel Total Memory Encryption)
 Rustc: 1.83.0-nightly (9e394f551 2024-09-25)
 PPD Profile: Performance
-Command: hyperfine --shell=none --warmup 1000 --setup "sleep 3" -M 1000
+Git commit: 8cb6747bd050601641272bc91af7be71f6c13c65
+
+Command:
+hyperfine --shell=none \
+    --shell=none --warmup 5000 --setup "/usr/bin/sleep 10" --style basic \
+    -n "x86_64-unknown-linux-gnu"  /usr/bin/empty_binary0 \
+    -n "x86_64-unknown-linux-musl" /usr/bin/empty_binary1 \
+    -n "x86_64-unknown-none"       /usr/bin/empty_binary2)
+(Ran inside of chroot, empty_binaryN links to hwcaps-loaderN)
 ```
 
 ### empty_binary
