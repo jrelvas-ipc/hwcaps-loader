@@ -84,6 +84,6 @@ pub fn execve(path: &CStr, argv: *const *const c_char, envp: *const *const c_cha
      unsafe {
         let result = syscall!(Sysno::execve, path.as_ptr(), argv, envp);
         //Execve doesn't return, so it's safe to assume an error occured
-        result.err().unwrap_unchecked()
+        result.unwrap_err_unchecked()
     }
 }
