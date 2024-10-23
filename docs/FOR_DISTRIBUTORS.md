@@ -13,8 +13,8 @@ different properties and advantages...
 `x86_64-unknown-linux-gnu` -
 Build with glibc ABI and dynamic linking.
 
-- File Size: `~11.8 kB`
-- Speed: `269.6 µs ± 34.5 µs`
+- File Size: `~10.7 kB`
+- Speed: `264.5 µs ± 36.1 µs`
 - Runtime Dependencies: `glibc`
 - Build Dependencies: `glibc` + linker
 - Requires Rust Nightly: No
@@ -24,7 +24,7 @@ Build with glibc ABI and dynamic linking.
 Build with musl ABI and static linking.
 
 - File Size: `~18.0 kB`
-- Speed: `120.9 µs ± 22.2 µs`
+- Speed: `120.0 µs ± 22.6 µs`
 - Runtime Dependencies: None!
 - Build Dependencies: `musl` + linker
 - Requires Rust Nightly: No
@@ -33,8 +33,8 @@ Build with musl ABI and static linking.
 `x86_64-unknown-none` -
 Build without libc, raw rust entry point.
 
-- File Size: `~7.9 kB`
-- Speed: `118.3 µs ± 20.3 µs`
+- File Size: `~7.5 kB`
+- Speed: `117.2 µs ± 20.4 µs`
 - Runtime Dependencies: None!
 - Build Dependencies: linker
 - Requires Rust Nightly: **Yes**
@@ -59,7 +59,7 @@ CPU: 45W TDP Intel Core i7-13800H @ 2.50GHz (6P+8E 20T)
 Memory: 2 x 32GB DDR5-5600 @ 5200 MT/s (Intel Total Memory Encryption)
 Rustc: 1.83.0-nightly (9e394f551 2024-09-25)
 PPD Profile: Performance
-Git commit: 8cb6747bd050601641272bc91af7be71f6c13c65
+Git commit: d5beab85482ecacb1ee50db8e97a5ed9ca6690c1
 
 Command:
 hyperfine --shell=none \
