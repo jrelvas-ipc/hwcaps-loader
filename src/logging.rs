@@ -10,6 +10,9 @@ impl<'a> PrintBuff<'a> {
             offset: 0,
         }
     }
+    pub fn len(&mut self) -> usize {
+        self.offset
+    }
 }
 
 macro_rules! write_str {
@@ -62,8 +65,15 @@ impl<'a> core::fmt::Write for PrintBuff<'a> {
     ($($arg:tt)*) => {{
         let mut buffer = make_uninit_array!(1024);
         let mut writer = PrintBuff::new(&mut buffer);
+
+
         _ = tfmt::uwriteln!(&mut writer, $($arg)*);
 
-        write_message!(&mut buffer);
+        let final_index = writer.len()-1;
+
+        #[allow(unused_unsafe)]
+        let mut trimmed_buffer = unsafe { buffer.get_unchecked(..final_index) };
+
+        write_message!(&mut trimmed_buffer);
     }}
 }

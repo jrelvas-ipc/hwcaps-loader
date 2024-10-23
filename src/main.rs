@@ -63,18 +63,23 @@ static HWCAPS_PATH: &'static [u8] = b"/usr/hwcaps/";
 //const USR_PATH: &'static [u8] = &HWCAPS_PATH[..4];
 static BIN_PATH: &'static [u8] = b"/usr/bin/";
 
-fn get_arg_string(ptr: *const c_char) -> &'static str {
-    // argv0 can technically be larger than this, but any value which is larger
-    // than a path is worthless to us anyways!
-    let arg_slice = unsafe { slice::from_raw_parts(ptr as *mut u8, sys::MAX_PATH_LEN as usize) };
+fn extract_argv0(ptr: *const *const c_char) -> &'static [u8] {
+    let arg_slice = unsafe {
+        let ptr = *ptr; // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
+
+        // argv0 can technically be larger than this, but any value which is larger
+        // than a path is worthless to us anyways!
+        slice::from_raw_parts(ptr as *mut u8, sys::MAX_PATH_LEN as usize)
+    };
 
     let terminator_index = match memchr(b'\0', &arg_slice) {
-        Some(i) => i,
+        Some(i) => i + 1,
         _ => abort!(exit_code::COMMAND_PATH_INVALID, "Command path: Invalid!")
     };
 
-    return unsafe { str::from_utf8_unchecked(&arg_slice[..terminator_index+1])};
-
+    unsafe {
+        arg_slice.get_unchecked(..terminator_index)
+    }
 }
 
 fn get_loader_path(buffer: &mut [u8]) -> usize {
@@ -91,35 +96,49 @@ fn get_loader_path(buffer: &mut [u8]) -> usize {
     loader_size
 }
 
-fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
-    let str_ptr = path.as_ptr() as *const i8;
-    let c_str = unsafe { CStr::from_ptr(str_ptr) };
+fn resolve_path(cwd_fd: i32, path: &[u8], buffer: &mut [u8]) -> usize {
+    let c_str = unsafe {
+        let str_ptr = path.as_ptr() as *const i8;
+        CStr::from_ptr(str_ptr)
+    };
 
     let fd = match sys::openat(cwd_fd, c_str, sys::O_PATH | sys::O_NOFOLLOW) {
         Ok(d) => d,
-        Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path resolution: IO error for \"{}\"! ({})", &path, e.into_raw())
+        Err(e) => {
+            let s = unsafe { str::from_utf8_unchecked(path) };
+            abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path resolution: IO error for \"{}\"! ({})", s, e.into_raw())
+        }
     };
 
-    // There are three default FDs on Linux: 0 (STDOUT); 1 (STDIN); 2 (STDERR)
-    // Since we only ever open a single file descriptor in hwcaps-loader, it's usual for the FD to be 3...
-    // ...unless the program which executed us didn't close its FDs...
-    // use a fast path for fd 3, while including a formatting fallback for other FDs.
-    let mut path_buffer;
-    let path = if fd == 3 {
-        "/dev/fd/3\0"
-    } else {
-        path_buffer = make_uninit_array!(128);
-        let mut writer = PrintBuff::new(&mut path_buffer);
+    let mut absolute_path = make_uninit_array!(128);
+    let mut writer = PrintBuff::new(&mut absolute_path);
+    _ = tfmt::uwrite!(&mut writer, "/dev/fd/{}\0", fd);
+    let c_str = unsafe { CStr::from_ptr(absolute_path.as_ptr()  as *const i8) };
 
-        _ = tfmt::uwrite!(&mut writer, "/dev/fd/{}\0", fd);
-        unsafe { str::from_utf8_unchecked(&path_buffer) }
-    };
-
-    match sys::readlink(unsafe {CStr::from_bytes_with_nul_unchecked(path.as_bytes())}, buffer) {
+    match sys::readlink(c_str, buffer) {
         Ok(p) => p,
-        //Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path Resolution error! Failed to get path of FD \"{}\"! (errno: {})", fd, e.into_raw())
-        Err(e) => abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path resolution: IO error for \"{}\"! ({})", path, e.into_raw())
+        Err(e) => {
+            let s = unsafe { str::from_utf8_unchecked(path) };
+            abort!(exit_code::PATH_RESOLUTION_IO_ERROR, "Path resolution: IO error for \"{}\"! ({})", s, e.into_raw())
+        }
     }
+}
+
+// Returns true if argv0 doesn't start with "/", "./" or "../"
+#[inline]
+fn target_is_alias(argv0: &[u8]) -> bool {
+    let len = argv0.len();
+    for i in 0..1 {
+        if len < i { return true };
+        let byte = unsafe { *argv0.get_unchecked(i) };
+        if byte == b'/' {
+            return false
+        }
+        else if byte != b'.' && i < 2 {
+            return true
+        }
+    }
+    true
 }
 
 #[no_mangle]
@@ -128,34 +147,33 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     #[allow(non_snake_case)]
     let USR_PATH: &'static [u8] = unsafe { slice::from_raw_parts(HWCAPS_PATH.as_ptr(), 4) };
 
-    // We cheat here - argv0 and loader_path have a null terminator
-    // (makes it easier to interface with C code without useless copies)
-    // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
-    let argv0 = get_arg_string(unsafe { *argv });
+    // argv0 includes a terminator character. This comes in handy when interfacing with syscalls.
+    let argv0 = extract_argv0(argv);
 
     let mut loader_path = make_uninit_array!(sys::MAX_PATH_LEN as usize);
-    let loader_len = get_loader_path(&mut loader_path);
+    // Note: The linux kernel doesn't write a null terminator. Since loader_path is an uninitialized array,
+    //       we cannot assume there's a null terminator.
+
+    let loader_end_index = get_loader_path(&mut loader_path);
+
     let bin_index = BIN_PATH.len();
     let usr_index = USR_PATH.len();
 
     //Make sure we're not trying to execute ourselves!
     #[cfg(feature = "self_execution_check")]
-    {
-        let without_terminator = unsafe {
-            let bytes = argv0.as_bytes();
-            bytes.get_unchecked(..bytes.len()-1)
-        };
-
-        if without_terminator.ends_with(&loader_path[bin_index..loader_len]){
+    unsafe {
+        let cmp1 = argv0.get_unchecked(..argv0.len()-1); //Ignore terminator
+        let cmp2 = loader_path.get_unchecked(bin_index..loader_end_index);
+        if cmp1.ends_with(cmp2) {
             abort!(exit_code::SELF_EXECUTION, "Recursion error! Do not run the loader directly!")
         }
-    }
+    };
 
     let mut cwd = sys::AT_FDCWD;
 
     // When argv0 is a command alias (foo -> /usr/bin/foo, for example)
     // Set cwd to our binary's parent (normally /usr/bin)
-    if !argv0.starts_with("/") && !argv0.starts_with("./") && !argv0.starts_with("../") {
+    if target_is_alias(&argv0) {
         //Sneakily put a null byte here without making a new string
         let byte = loader_path[bin_index];
         loader_path[bin_index] = b'\0';
