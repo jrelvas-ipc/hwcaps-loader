@@ -108,7 +108,7 @@ fn resolve_path(cwd_fd: i32, path: &str, buffer: &mut [u8]) -> usize {
     let path = if fd == 3 {
         "/dev/fd/3\0"
     } else {
-        path_buffer = [0; 128];
+        path_buffer = make_uninit_array!(128);
         let mut writer = PrintBuff::new(&mut path_buffer);
 
         _ = tfmt::uwrite!(&mut writer, "/dev/fd/{}\0", fd);
@@ -133,7 +133,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
     let argv0 = get_arg_string(unsafe { *argv });
 
-    let mut loader_path = [0; sys::MAX_PATH_LEN as usize];
+    let mut loader_path = make_uninit_array!(sys::MAX_PATH_LEN as usize);
     let loader_len = get_loader_path(&mut loader_path);
     let bin_index = BIN_PATH.len();
     let usr_index = USR_PATH.len();
@@ -170,7 +170,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         loader_path[bin_index] = byte;
     }
 
-    let mut cmd_path = [0; sys::MAX_PATH_LEN as usize];
+    let mut cmd_path = make_uninit_array!(sys::MAX_PATH_LEN as usize);
     let cmd_path_len = resolve_path(cwd, argv0, &mut cmd_path);
 
     // cmd_path_len+1 must fit in cmd_path, because of the terminator.

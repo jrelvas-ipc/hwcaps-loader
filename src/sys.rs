@@ -44,6 +44,13 @@ pub const O_CLOEXEC: c_int = 0x80000;
 
 pub const ENOENT: c_int = 2;
 
+#[macro_export] macro_rules! make_uninit_array {
+    ($size:expr) => {{
+        let uninit = [const { core::mem::MaybeUninit::<u8>::uninit() }; $size];
+        unsafe { core::mem::transmute::<[core::mem::MaybeUninit<u8>; $size as usize], [u8; $size as usize]>(uninit) }
+    }}
+}
+
 #[inline]
 pub fn exit(code: i32) -> ! {
     unsafe {

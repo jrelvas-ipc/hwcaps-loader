@@ -60,7 +60,7 @@ impl<'a> core::fmt::Write for PrintBuff<'a> {
 
 #[macro_export] macro_rules! print {
     ($($arg:tt)*) => {{
-        let mut buffer = [0; 1024];
+        let mut buffer = make_uninit_array!(1024);
         let mut writer = PrintBuff::new(&mut buffer);
         _ = tfmt::uwriteln!(&mut writer, $($arg)*);
 
