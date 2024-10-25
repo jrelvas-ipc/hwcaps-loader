@@ -37,7 +37,6 @@ use core::ffi::c_char;
 use core::ffi::CStr;
 use core::slice;
 
-use memchr::memchr;
 use logging::PrintBuff;
 
 mod exit_code {
@@ -64,22 +63,18 @@ static HWCAPS_PATH: &'static [u8] = b"/usr/hwcaps/";
 static BIN_PATH: &'static [u8] = b"/usr/bin/";
 
 fn extract_argv0(ptr: *const *const c_char) -> &'static [u8] {
-    let arg_slice = unsafe {
+    let argv0 = unsafe {
         let ptr = *ptr; // Modern linux kernels guarantee argv0's existence, so no need to check if the pointer is null
 
-        // argv0 can technically be larger than this, but any value which is larger
-        // than a path is worthless to us anyways!
-        slice::from_raw_parts(ptr as *mut u8, sys::MAX_PATH_LEN as usize)
+        // from_ptr uses strlen() internally, provided by libc or as a compiler langite
+        CStr::from_ptr(ptr).to_bytes_with_nul()
     };
 
-    let terminator_index = match memchr(b'\0', &arg_slice) {
-        Some(i) => i + 1,
-        _ => abort!(exit_code::COMMAND_PATH_INVALID, "Command path: Invalid!")
-    };
-
-    unsafe {
-        arg_slice.get_unchecked(..terminator_index)
+    if argv0.len() > sys::MAX_PATH_LEN as usize || argv0.len() < 1 {
+        abort!(exit_code::COMMAND_PATH_INVALID, "Command path: Invalid!")
     }
+
+    argv0
 }
 
 fn get_loader_path(buffer: &mut [u8]) -> usize {
