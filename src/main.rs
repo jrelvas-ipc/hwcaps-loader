@@ -36,6 +36,7 @@ use core::str;
 use core::ffi::c_char;
 use core::ffi::CStr;
 use core::slice;
+use core::cmp;
 
 use logging::PrintBuff;
 
@@ -119,24 +120,22 @@ fn resolve_path(cwd_fd: i32, path: &[u8], buffer: &mut [u8]) -> usize {
     }
 }
 
-// Returns true if argv0 doesn't start with "/", "./" or "../"
-#[inline]
-fn target_is_alias(argv0: &[u8]) -> bool {
-    let len = argv0.len();
-    for i in 0..1 {
-        if len < i { return true };
-        let byte = unsafe { *argv0.get_unchecked(i) };
-        if byte == b'/' {
-            return false
-        }
-        else if byte != b'.' && i < 2 {
-            return true
-        }
+// Returns -1 if path is alias
+// Returns 0 if path starts with "/" (absolute)
+// Returns 1 if path starts with "./" (relative)
+// Returns 2 if path starts with "../" (relative)
+fn get_path_kind(path: &[u8]) -> i8 {
+    let last = cmp::min(path.len()-1, 2);
+
+    for i in 0..last {
+        let byte = unsafe { *path.get_unchecked(i) };
+
+        if byte == b'/' { return i as i8 };
+        if byte != b'.' { break };
     }
-    true
+    -1
 }
 
-#[no_mangle]
 pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) -> ! {
     //Workaround for rust not supporting static declaration from other statics
     #[allow(non_snake_case)]
@@ -168,7 +167,9 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     // When argv0 is a command alias (foo -> /usr/bin/foo, for example)
     // Set cwd to our binary's parent (normally /usr/bin)
-    if target_is_alias(&argv0) {
+    let path_kind = get_path_kind(&argv0);
+
+    if path_kind == -1 {
         //Sneakily put a null byte here without making a new string
         let byte = loader_path[bin_index];
         loader_path[bin_index] = b'\0';
