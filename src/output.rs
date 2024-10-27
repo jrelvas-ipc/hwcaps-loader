@@ -77,7 +77,9 @@ fn print(msg: &'static str, errno: u32, path: Option<&[u8]>) {
 
 #[cold]
 pub fn abort(err: ExitCode, msg: &'static str, errno: u32, path: Option<&[u8]>) -> ! {
+    #[cfg(feature = "error_output")]
     print(msg, errno, path);
+
     exit(err as u8)
 }
 

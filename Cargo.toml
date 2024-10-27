@@ -22,5 +22,6 @@ bitflags = { version = "2" }
 syscalls = { version = "0.6", default-features = false }
 
 [features]
-default = [ "self_execution_check" ]
+default = [ "self_execution_check", "error_output" ]
 self_execution_check = []
+error_output = []
