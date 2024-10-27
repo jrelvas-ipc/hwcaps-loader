@@ -1,5 +1,5 @@
 use crate::sys;
-use crate::exit_code;
+use crate::logging;
 
 // NON-LIBC LINKING//
 
@@ -42,19 +42,17 @@ extern "C" fn rust_eh_personality() {}
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;
-    use crate::PrintBuff;
-    use crate::write_message;
 
     let message = _info.message();
     let location = _info.location().unwrap();
 
     let mut buffer = [0; 1024];
-    let mut writer = PrintBuff::new(&mut buffer);
+    let mut writer = logging::PrintBuff::new(&mut buffer);
 
     let _ = write!(&mut writer, "Error: {message}\nAt: {location}\n");
 
-    write_message!(&buffer);
-    sys::exit(exit_code::RUST_PANIC)
+    _ = sys::write(sys::STDOUT, &buffer);
+    sys::exit(logging::ErrorCode::RustPanic as u8)
 }
 
 #[cfg(not(debug_assertions))]
@@ -63,5 +61,5 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 // and we can't use tfmt because PanicInfo is too tied to core::fmt
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
-    sys::exit(exit_code::RUST_PANIC)
+    sys::exit(logging::ErrorCode::RustPanic as u8)
 }

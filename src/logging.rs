@@ -1,3 +1,21 @@
+use crate::sys::{writev, IOVector, exit, STDOUT};
+use core::mem::MaybeUninit;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ErrorCode {
+    Ok = 0,
+    RustPanic = 100,
+    SelfExecution = 200,
+    CommandPathInvalid = 210,
+    ProcPathIOError = 220,
+    ProcPathInvalid = 221,
+    PathResolutionIOError = 230,
+    TargetPathInvalid = 240,
+    TargetPathTooLarge = 241,
+    TargetExecutionError = 242,
+    TargetNoViableBinaries = 243
+}
+
 pub struct PrintBuff<'a> {
     buf: &'a mut [u8],
     offset: usize,
@@ -10,70 +28,89 @@ impl<'a> PrintBuff<'a> {
             offset: 0,
         }
     }
-    pub fn len(&mut self) -> usize {
-        self.offset
+}
+
+use core::fmt;
+impl<'a> fmt::Write for PrintBuff<'a> {
+    fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
+        let bytes = s.as_bytes();
+
+        unsafe {
+            // Skip over already-copied data
+            let remainder = self.buf.get_unchecked_mut(self.offset..);
+            // Check if there is space remaining (return error instead of panicking)
+            if remainder.len() < bytes.len() { return Err(fmt::Error); }
+            // Make the two slices the same length
+            let remainder = remainder.get_unchecked_mut(..bytes.len());
+            // Copy
+            remainder.copy_from_slice(bytes);
+
+            // Update offset to avoid overwriting
+            self.offset += bytes.len();
+        }
+        Ok(())
     }
 }
 
-macro_rules! write_str {
-    ($($arg:tt)*) => {
-        fn write_str(&mut self, s: &str) -> Result<(), $($arg)*> {
-            let bytes = s.as_bytes();
+pub fn itoa(mut n: u32, arr: &mut [u8]) -> usize {
+    let mut last_digit = false;
+    let mut i = 0;
 
-            unsafe {
-                // Skip over already-copied data
-                let remainder = self.buf.get_unchecked_mut(self.offset..);
-                // Check if there is space remaining (return error instead of panicking)
-                if remainder.len() < bytes.len() { return Err($($arg)*); }
-                // Make the two slices the same length
-                let remainder = remainder.get_unchecked_mut(..bytes.len());
-                // Copy
-                remainder.copy_from_slice(bytes);
+    while !last_digit {
+        if n < 10 {last_digit = true};
 
-                // Update offset to avoid overwriting
-                self.offset += bytes.len();
-            }
+        let digit = (n % 10) as u8;
+        arr[i] = digit + b'0';
+        n /= 10;
+        i += 1;
+    }
 
-            Ok(())
-        }
+    arr[..i].reverse();
+    i
+}
+
+#[inline(always)]
+fn print(msg: &'static str, errno: u32, path: Option<&[u8]>) {
+    let mut array: [MaybeUninit<IOVector>; 9] = [const { MaybeUninit::uninit() }; 9];
+    let mut offset = 0;
+
+    let mut write_part = |buf: &[u8]| {
+        array[offset].write(IOVector::new(buf));
+        offset += 1;
     };
+
+    write_part(b"hwcaps-loader: ");
+    write_part(&msg.as_bytes());
+
+    let mut errno_buffer: [u8; 16];
+    if errno != 0 {
+        write_part(b" | Errno: ");
+
+        errno_buffer = [0; 16];
+        let len = itoa(errno, &mut errno_buffer);
+
+        write_part(&errno_buffer[..len]);
+    }
+    match path {
+        Some(p) => {
+            write_part(b" | Path: ");
+            write_part(p);
+        },
+        _ => ()
+    }
+
+    write_part(b"\n");
+
+    writev(STDOUT, (array).as_ptr(), offset);
 }
 
-
-impl<'a> tfmt::uWrite for PrintBuff<'a> {
-    type Error = ();
-
-    write_str!(());
+#[cold]
+pub fn debug_print(msg: &'static str, errno: u32, path: Option<&[u8]>) {
+    print(msg, errno, path);
 }
 
-impl<'a> core::fmt::Write for PrintBuff<'a> {
-    write_str!(core::fmt::Error);
-}
-
-#[macro_export] macro_rules! abort {
-    ($exit_code:expr) => {{
-        print!(b"An error has occured!\n");
-        sys::exit($exit_code)
-    }};
-    ($exit_code:expr, $($arg:tt)*) => {{
-        print!($($arg)*);
-        sys::exit($exit_code)
-    }}
-}
-
-#[macro_export] macro_rules! print {
-    ($($arg:tt)*) => {{
-        let mut buffer = make_uninit_array!(1024);
-        let mut writer = PrintBuff::new(&mut buffer);
-
-
-        _ = tfmt::uwriteln!(&mut writer, $($arg)*);
-
-        let final_index = writer.len()-1;
-
-        #[allow(unused_unsafe)]
-        let mut trimmed_buffer = unsafe { buffer.get_unchecked(..final_index) };
-
-        write_message!(&mut trimmed_buffer);
-    }}
+#[cold]
+pub fn abort(err: ErrorCode, msg: &'static str, errno: u32, path: Option<&[u8]>) -> ! {
+    print(msg, errno, path);
+    exit(err as u8)
 }

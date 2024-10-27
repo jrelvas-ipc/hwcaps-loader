@@ -44,6 +44,21 @@ pub const O_CLOEXEC: c_int = 0x80000;
 
 pub const ENOENT: c_int = 2;
 
+#[repr(C)]
+pub struct IOVector {
+    pub iov_base: *const u8,
+    pub iov_len: usize
+}
+
+impl IOVector {
+    pub fn new(buffer: &[u8]) -> Self {
+        IOVector {
+            iov_base: buffer.as_ptr(),
+            iov_len: buffer.len(),
+        }
+    }
+}
+
 #[macro_export] macro_rules! make_uninit_array {
     ($size:expr) => {{
         let uninit = [const { core::mem::MaybeUninit::<u8>::uninit() }; $size];
@@ -53,7 +68,7 @@ pub const ENOENT: c_int = 2;
 }
 
 #[inline]
-pub fn exit(code: i32) -> ! {
+pub fn exit(code: u8) -> ! {
     unsafe {
         _ = syscall!(Sysno::exit, code);
         core::hint::unreachable_unchecked()
@@ -61,14 +76,13 @@ pub fn exit(code: i32) -> ! {
 }
 
 #[inline]
-pub fn write(fd: i32, buffer: &[u8]) -> Result<usize, Errno> {
-    unsafe { syscall!(Sysno::write, fd, buffer.as_ptr(), buffer.len()) }
+pub fn writev(fd: i32, iovec: *const core::mem::MaybeUninit<IOVector>, iovcnt: usize) -> Result<usize, Errno> {
+    unsafe { syscall!(Sysno::writev, fd, iovec, iovcnt) }
 }
 
-#[macro_export] macro_rules! write_message {
-    ($arg:expr) => {
-        _ = sys::write(sys::STDOUT, $arg);
-    };
+#[inline]
+pub fn write(fd: i32, buffer: &[u8]) -> Result<usize, Errno> {
+    unsafe { syscall!(Sysno::write, fd, buffer.as_ptr(), buffer.len()) }
 }
 
 #[inline]
