@@ -18,21 +18,18 @@
  *     José Relvas <josemonsantorelvas@gmail.com>
  */
 
-use core::ffi::c_int;
-//use core::ffi::c_size_t;
-//use core::ffi::c_ssize_t;
-use core::ffi::c_char;
-use core::ffi::CStr;
+/*
+   This module contains all of the nasty low-level OS and linking stuff.
+   The rest of hwcaps-loader should be (somewhat) OS agnostic.
+*/
 
+use core::ffi::{c_int, /*c_ssize_t,*/ c_char, CStr};
 use syscalls::{Sysno, syscall, Errno};
 
 //TODO: remove this when https://github.com/rust-lang/rust/issues/88345 is stabilized
-//#[allow(non_camel_case_types)]
-//type c_size_t = usize;
 #[allow(non_camel_case_types)]
 type c_ssize_t = isize;
 
-//pub const MAX_ARG_LEN: c_size_t = 131072;
 pub const MAX_PATH_LEN: c_ssize_t = 4096;
 
 pub const STDOUT: c_int = 1;
@@ -44,12 +41,91 @@ pub const O_CLOEXEC: c_int = 0x80000;
 
 pub const ENOENT: c_int = 2;
 
+/*
+   LINKING
+   To have a functional program, we must provide the following members to
+   the compiler and the linker:
+   - entry point (_start) or external libc
+   - panic_handler
+   - rust_eh_personality
+*/
+
+/* For targets with no OS/ABI, link a minimal entry point (_start) function.*/
+#[cfg(target_os="none")]
+#[cfg_attr(target_arch = "x86", path = "entry_point/arch_x86.rs")]
+#[cfg_attr(target_arch = "x86_64", path = "entry_point/arch_x86.rs")]
+mod entry_point;
+
+/* For targets with an OS/ABI, link libc */
+#[cfg(not(target_os="none"))]
+#[link(name = "c")]
+extern "C" {}
+
+//TODO: use when https://doc.rust-lang.org/unstable-book/language-features/lang-items.html stabilizes
+//#[lang = "eh_personality"]
+//extern "C" fn eh_personality() {}
+
+//Workarounds for https://github.com/rust-lang/rust/issues/106864
+#[no_mangle]
+extern "C" fn rust_eh_personality() {}
+
+// Debug panic handler
+#[cfg(debug_assertions)]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    use core::fmt;
+    use fmt::Write;
+
+    use crate::output::debug::PrintBuff;
+
+    let message = _info.message();
+    let location = _info.location().unwrap();
+
+    let mut buffer = [0; 1024];
+    let mut writer = PrintBuff::new(&mut buffer);
+
+    let _ = write!(&mut writer, "Error: {message}\nAt: {location}\n");
+
+    _ = write(STDOUT, &buffer);
+    exit(ExitCode::RustPanic as u8)
+}
+
+
+// Production panic handler
+/* We can't do panic on production...
+   core::fmt increases binary size by an obscene amount
+   Just exist with a special error code if that happens */
+#[cfg(not(debug_assertions))]
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    exit(ExitCode::RustPanic as u8)
+}
+
+/*
+   SYSCALLS
+   This part of the module implements wrappers for talking
+   directly with the kernel (rather than using libc)
+*/
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ExitCode {
+    RustPanic = 100,
+    SelfExecution = 200,
+    CommandPathInvalid = 210,
+    ProcPathIOError = 220,
+    ProcPathInvalid = 221,
+    PathResolutionIOError = 230,
+    TargetPathInvalid = 240,
+    TargetPathTooLarge = 241,
+    TargetExecutionError = 242,
+    TargetNoViableBinaries = 243
+}
+
 #[repr(C)]
 pub struct IOVector {
     pub iov_base: *const u8,
     pub iov_len: usize
 }
-
 impl IOVector {
     pub fn new(buffer: &[u8]) -> Self {
         IOVector {
@@ -61,9 +137,11 @@ impl IOVector {
 
 #[macro_export] macro_rules! make_uninit_array {
     ($size:expr) => {{
-        let uninit = [const { core::mem::MaybeUninit::<u8>::uninit() }; $size];
+        use core::mem::{transmute, MaybeUninit};
+
+        let uninit = [const { MaybeUninit::<u8>::uninit() }; $size];
         #[allow(unused_unsafe)]
-        unsafe { core::mem::transmute::<[core::mem::MaybeUninit<u8>; $size as usize], [u8; $size as usize]>(uninit) }
+        unsafe { transmute::<[MaybeUninit<u8>; $size as usize], [u8; $size as usize]>(uninit) }
     }}
 }
 
@@ -80,6 +158,7 @@ pub fn writev(fd: i32, iovec: *const core::mem::MaybeUninit<IOVector>, iovcnt: u
     unsafe { syscall!(Sysno::writev, fd, iovec, iovcnt) }
 }
 
+#[allow(unused)] // This is only used by the panic function when debug_assertions are enabled
 #[inline]
 pub fn write(fd: i32, buffer: &[u8]) -> Result<usize, Errno> {
     unsafe { syscall!(Sysno::write, fd, buffer.as_ptr(), buffer.len()) }

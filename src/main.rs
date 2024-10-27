@@ -28,17 +28,14 @@
 
 mod sys;
 mod capabilities;
-mod logging;
+mod path;
+mod output;
 
-mod init;
-
-use core::str;
-use core::ffi::c_char;
-use core::ffi::CStr;
+use core::ffi::{c_char, CStr};
 use core::slice;
-use core::cmp;
 
-use logging::{ErrorCode, abort, debug_print, PrintBuff};
+use sys::ExitCode;
+use output::abort;
 
 static HWCAPS_PATH: &'static [u8] = b"/usr/hwcaps/";
 //const USR_PATH: &'static [u8] = &HWCAPS_PATH[..4];
@@ -53,7 +50,7 @@ fn extract_argv0(ptr: *const *const c_char) -> &'static [u8]  {
     };
 
     if argv0.len() > sys::MAX_PATH_LEN as usize || argv0.len() < 1 {
-        abort(ErrorCode::CommandPathInvalid, "Command path doesn't fit bounds!", 0, None)
+        abort(ExitCode::CommandPathInvalid, "Command path doesn't fit bounds!", 0, None)
     }
 
     argv0
@@ -62,12 +59,12 @@ fn extract_argv0(ptr: *const *const c_char) -> &'static [u8]  {
 fn get_loader_path(buffer: &mut [u8]) -> usize {
     let loader_size = match sys::readlink(c"/proc/self/exe", buffer) {
         Ok(p) => p,
-        Err(e) => abort(ErrorCode::ProcPathIOError, "Failed to read loader path!", e.into_raw() as u32, None)
+        Err(e) => abort(ExitCode::ProcPathIOError, "Failed to read loader path!", e.into_raw() as u32, None)
     };
 
     // It's safe to do this because the buffers passed to this function are always 4096 bytes
     if unsafe { buffer.get_unchecked(..BIN_PATH.len()) } != BIN_PATH {
-        abort(ErrorCode::ProcPathInvalid, "Invalid loader binary location!", 0, None)
+        abort(ExitCode::ProcPathInvalid, "Invalid loader binary location!", 0, None)
     }
 
     loader_size
@@ -82,37 +79,22 @@ fn resolve_path(cwd_fd: i32, path: &[u8], buffer: &mut [u8]) -> usize {
     let fd = match sys::openat(cwd_fd, c_str, sys::O_PATH | sys::O_NOFOLLOW) {
         Ok(d) => d,
         Err(e) => {
-            abort(ErrorCode::PathResolutionIOError, "Failed to resolve path! (open error)", e.into_raw() as u32, None)
+            abort(ExitCode::PathResolutionIOError, "Failed to resolve path! (open error)", e.into_raw() as u32, None)
         }
     };
 
     // Four digits should be enough for our purposes
     let mut fd_path = *b"/dev/fd/\0\0\0\0\0";
-    logging::itoa(fd as u32, &mut fd_path[8..]);
+    path::itoa(fd as u32, &mut fd_path[8..]);
 
     let fd_cstr = unsafe { CStr::from_bytes_with_nul_unchecked(&fd_path) };
 
     match sys::readlink(fd_cstr, buffer) {
         Ok(p) => p,
-        Err(e) => abort(ErrorCode::PathResolutionIOError, "Failed to resolve path! (FD readlink error)", e.into_raw() as u32, None)
+        Err(e) => abort(ExitCode::PathResolutionIOError, "Failed to resolve path! (FD readlink error)", e.into_raw() as u32, None)
     }
 }
 
-// Returns -1 if path is alias
-// Returns 0 if path starts with "/" (absolute)
-// Returns 1 if path starts with "./" (relative)
-// Returns 2 if path starts with "../" (relative)
-fn get_path_kind(path: &[u8]) -> i8 {
-    let last = cmp::min(path.len()-1, 2);
-
-    for i in 0..last {
-        let byte = unsafe { *path.get_unchecked(i) };
-
-        if byte == b'/' { return i as i8 };
-        if byte != b'.' { break };
-    }
-    -1
-}
 
 pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) -> ! {
     //Workaround for rust not supporting static declaration from other statics
@@ -137,7 +119,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         let cmp1 = argv0.get_unchecked(..argv0.len()-1); //Ignore terminator
         let cmp2 = loader_path.get_unchecked(bin_index..loader_end_index);
         if cmp1.ends_with(cmp2) {
-            abort(ErrorCode::SelfExecution, "Do not run hwcaps-loader directly!", 0, None)
+            abort(ExitCode::SelfExecution, "Do not run hwcaps-loader directly!", 0, None)
         }
     };
 
@@ -145,7 +127,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     // When argv0 is a command alias (foo -> /usr/bin/foo, for example)
     // Set cwd to our binary's parent (normally /usr/bin)
-    let path_kind = get_path_kind(&argv0);
+    let path_kind = path::get_kind(&argv0);
 
     if path_kind == -1 {
         //Sneakily put a null byte here without making a new string
@@ -156,7 +138,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
         cwd = match sys::openat(sys::AT_FDCWD, c_str, sys::O_PATH) {
             Ok(d) => d,
-            Err(e) => abort(ErrorCode::PathResolutionIOError, "Failed to get parent directory of loader!", e.into_raw() as u32, None)
+            Err(e) => abort(ExitCode::PathResolutionIOError, "Failed to get parent directory of loader!", e.into_raw() as u32, None)
         };
         //Restore the previous character
         loader_path[bin_index] = byte;
@@ -167,7 +149,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     // cmd_path_len+1 must fit in cmd_path, because of the terminator.
     if cmd_path_len+1 >= cmd_path.len() {
-        abort(ErrorCode::TargetPathTooLarge, "Target path too large!", 0, None)
+        abort(ExitCode::TargetPathTooLarge, "Target path too large!", 0, None)
     }
 
     // These aren't problematic because argv0 is guaranteed to be  bytes long
@@ -176,7 +158,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     // Check if our target's on /usr/
     if cmd_path_usr_slice != USR_PATH {
-        abort(ErrorCode::TargetPathTooLarge, "Invalid target location!", 0, None)
+        abort(ExitCode::TargetPathInvalid, "Invalid target location!", 0, None)
     }
 
     // Prepare execution target path
@@ -219,7 +201,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
             let (relative_char_index, arch_name_len) = match capabilities::format_arch_name(&mut target_relative_slice, i) {
                 Ok(v) => v,
-                Err(_) => abort(ErrorCode::TargetPathTooLarge, "Target path too large!", 0, None)
+                Err(_) => abort(ExitCode::TargetPathTooLarge, "Target path too large!", 0, None)
             };
             version_char_index = relative_char_index + copy_index;
 
@@ -227,7 +209,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
             path_len = base_length + arch_name_len;
 
             if path_len > sys::MAX_PATH_LEN as usize {
-                abort(ErrorCode::TargetPathTooLarge, "Target path too large!", path_len as u32, None)
+                abort(ExitCode::TargetPathTooLarge, "Target path too large!", path_len as u32, None)
             }
 
             unsafe {
@@ -246,7 +228,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         #[cfg(debug_assertions)]
         {
             let path_buffer = unsafe { slice::from_raw_parts(target_path.as_ptr(), path_len) };
-            debug_print("(DEBUG) Executing target.", 0, Some(path_buffer));
+            output::debug_print("(DEBUG) Executing target.", 0, Some(path_buffer));
         }
 
         let str_ptr = target_path.as_ptr() as *const i8;
@@ -256,10 +238,10 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
             sys::ENOENT => continue,
             other => {
                 let path_buffer = unsafe { slice::from_raw_parts(target_path.as_ptr(), path_len) };
-                abort(ErrorCode::TargetPathTooLarge, "Failed to execute target binary!", other as u32, Some(path_buffer))
+                abort(ExitCode::TargetExecutionError, "Failed to execute target binary!", other as u32, Some(path_buffer))
             }
         };
     }
 
-    abort(ErrorCode::TargetNoViableBinaries, "Program has no supported binaries available. Is it installed properly?", 0, None)
+    abort(ExitCode::TargetNoViableBinaries, "Program has no supported binaries available. Is it installed properly?", 0, None)
 }
