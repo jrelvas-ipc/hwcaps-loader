@@ -4,22 +4,9 @@ use crate::logging;
 // NON-LIBC LINKING//
 
 #[cfg(target_os="none")]
-#[cfg_attr(target_arch = "x86", path = "arch_x86.rs")]
-#[cfg_attr(target_arch = "x86_64", path = "arch_x86.rs")]
-mod arch;
-
-#[cfg(target_os="none")]
-pub unsafe extern "C" fn _main_proxy(mem: *const usize) -> ! {
-    use core::ffi::c_char;
-
-    let kernel_argc = *mem;
-    let argc = kernel_argc as i32;
-
-    let argv = mem.add(1).cast::<*const c_char>();
-    let envp = argv.add(argc as c_char as usize + 1);
-
-    super::main(argc as i32, argv, envp)
-}
+#[cfg_attr(target_arch = "x86", path = "entry_point_x86.rs")]
+#[cfg_attr(target_arch = "x86_64", path = "entry_point_x86.rs")]
+mod entry_point;
 
 // LIBC LINKING //
 
