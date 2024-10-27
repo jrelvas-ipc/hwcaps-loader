@@ -173,9 +173,7 @@ pub fn readlink(path: &CStr, buffer: &mut [u8]) -> Result<usize, Errno> {
 pub fn openat(dirfd: i32, path: &CStr, flags: c_int) -> Result<i32, Errno> {
     let result = unsafe { syscall!(Sysno::openat, dirfd, path.as_ptr(), O_CLOEXEC | flags) };
     match result {
-        Ok(fd) => {
-            return Ok(fd as i32)
-        },
+        Ok(fd) =>  return Ok(fd as i32),
         Err(e) => return Err(e),
     }
 }
