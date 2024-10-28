@@ -96,6 +96,7 @@ fn resolve_path(cwd_fd: i32, path: &[u8], buffer: &mut [u8]) -> usize {
 }
 
 
+#[no_mangle]
 pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) -> ! {
     //Workaround for rust not supporting static declaration from other statics
     #[allow(non_snake_case)]
