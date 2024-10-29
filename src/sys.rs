@@ -166,7 +166,16 @@ pub fn write(fd: i32, buffer: &[u8]) -> Result<usize, Errno> {
 
 #[inline]
 pub fn readlink(path: &CStr, buffer: &mut [u8]) -> Result<usize, Errno> {
-    unsafe { syscall!(Sysno::readlink, path.as_ptr(), buffer.as_mut_ptr(), buffer.len()) }
+    unsafe {
+        let ret = syscall!(Sysno::readlink, path.as_ptr(), buffer.as_mut_ptr(), buffer.len());
+        /* man "readlink(2)":
+           readlink()  places the contents of the symbolic link pathname in the buffer buf, which has size bufsiz.  read‐
+           link() does not append a terminating null byte to buf.  It will (silently) truncate the contents (to a  length
+           of bufsiz characters), in case the buffer is too small to hold all of the contents.
+        */
+        core::hint::assert_unchecked(ret.unwrap_unchecked() <= buffer.len());
+        ret
+    }
 }
 
 #[inline]
