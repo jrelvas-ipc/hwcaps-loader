@@ -38,7 +38,7 @@ use sys::ExitCode;
 use output::abort;
 
 const HWCAPS_PATH: &'static [u8] = b"/usr/hwcaps/";
-//const USR_PATH: &'static [u8] = &HWCAPS_PATH[..4];
+const USR_PATH: &'static [u8] = b"/usr";
 const BIN_PATH: &'static [u8] = b"/usr/bin/";
 
 fn extract_argv0(ptr: *const *const c_char) -> &'static [u8]  {
@@ -98,10 +98,6 @@ fn resolve_path(cwd_fd: i32, path: &[u8], buffer: &mut [u8]) -> usize {
 
 #[no_mangle]
 pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c_char) -> ! {
-    //Workaround for rust not supporting static declaration from other statics
-    #[allow(non_snake_case)]
-    let USR_PATH: &'static [u8] = unsafe { slice::from_raw_parts(HWCAPS_PATH.as_ptr(), 4) };
-
     // argv0 includes a terminator character. This comes in handy when interfacing with syscalls.
     let argv0 = extract_argv0(argv);
 
