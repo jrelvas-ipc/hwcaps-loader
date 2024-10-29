@@ -79,7 +79,7 @@ fn resolve_path(cwd_fd: i32, path: &[u8], buffer: &mut [u8]) -> usize {
     let fd = match sys::openat(cwd_fd, c_str, sys::O_PATH | sys::O_NOFOLLOW) {
         Ok(d) => d,
         Err(e) => {
-            abort(ExitCode::PathResolutionIOError, "Failed to resolve path! (open error)", e.into_raw() as u32, None)
+            abort(ExitCode::PathResolutionIOError, "Failed to resolve path!", e.into_raw() as u32, Some(path))
         }
     };
 
@@ -91,7 +91,7 @@ fn resolve_path(cwd_fd: i32, path: &[u8], buffer: &mut [u8]) -> usize {
 
     match sys::readlink(fd_cstr, buffer) {
         Ok(p) => p,
-        Err(e) => abort(ExitCode::PathResolutionIOError, "Failed to resolve path! (FD readlink error)", e.into_raw() as u32, None)
+        Err(e) => abort(ExitCode::PathResolutionIOError, "Failed to resolve path!", e.into_raw() as u32, Some(&fd_path))
     }
 }
 
