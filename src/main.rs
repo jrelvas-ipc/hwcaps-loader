@@ -112,13 +112,9 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     //Make sure we're not trying to execute ourselves!
     #[cfg(feature = "self_execution_check")]
-    unsafe {
-        let cmp1 = argv0.get_unchecked(..argv0.len()-1); //Ignore terminator
-        let cmp2 = loader_path.get_unchecked(bin_index..loader_end_index);
-        if cmp1.ends_with(cmp2) {
-            abort(ExitCode::SelfExecution, "Do not run hwcaps-loader directly!", 0, None)
-        }
-    };
+    if path::is_loader_binary(&loader_path[..loader_end_index], argv0) {
+        abort(ExitCode::SelfExecution, "Do not run hwcaps-loader directly!", 0, None)
+    }
 
     let mut cwd = sys::AT_FDCWD;
 

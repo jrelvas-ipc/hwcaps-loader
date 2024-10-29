@@ -1,4 +1,5 @@
-use core::cmp;
+use core::{cmp, hint};
+use crate::BIN_PATH;
 
 // Returns -1 if path is alias
 // Returns 0 if path starts with "/" (absolute)
@@ -32,4 +33,28 @@ pub fn itoa(mut n: u32, arr: &mut [u8]) -> usize {
 
     arr[..i].reverse();
     i
+}
+
+pub fn is_loader_binary(loader_path: &[u8], argv0_path: &[u8]) -> bool {
+    if loader_path.len() <= BIN_PATH.len() {return false};
+    let loader_name = &loader_path[BIN_PATH.len()..];
+
+    if argv0_path.len() - 1 <= loader_name.len() {return false};
+    let argv0_name = &argv0_path[argv0_path.len()-1-loader_name.len()..argv0_path.len()-1];
+
+    // We use this simple (but unoptimized) loop here due to Rust using very large (600+ bytes)
+    // intrisic functions for array/slice comparisons which don't fit in a architectural word (1/2/4/8) bytes.
+    // If libc is linked, its implementation of memcmp is used instead, bypassing this issue.
+    #[cfg(target_os="none")]
+    {
+        for i in 0..argv0_name.len()-1 {
+            if loader_name[i] == argv0_name[i] {
+                return true
+            }
+        }
+        false
+    }
+
+    #[cfg(not(target_os="none"))]
+    return loader_name == argv0_name;
 }
