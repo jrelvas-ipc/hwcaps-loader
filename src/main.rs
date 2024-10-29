@@ -119,9 +119,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
 
     // When argv0 is a command alias (foo -> /usr/bin/foo, for example)
     // Set cwd to our binary's parent (normally /usr/bin)
-    let path_kind = path::get_kind(&argv0);
-
-    if path_kind == -1 {
+    if path::get_kind(&argv0) == -1 {
         //Sneakily put a null byte here without making a new string
         let byte = loader_path[bin_index];
         loader_path[bin_index] = b'\0';
