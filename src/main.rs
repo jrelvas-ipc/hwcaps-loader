@@ -37,9 +37,9 @@ use core::slice;
 use sys::ExitCode;
 use output::abort;
 
-static HWCAPS_PATH: &'static [u8] = b"/usr/hwcaps/";
+const HWCAPS_PATH: &'static [u8] = b"/usr/hwcaps/";
 //const USR_PATH: &'static [u8] = &HWCAPS_PATH[..4];
-static BIN_PATH: &'static [u8] = b"/usr/bin/";
+const BIN_PATH: &'static [u8] = b"/usr/bin/";
 
 fn extract_argv0(ptr: *const *const c_char) -> &'static [u8]  {
     let argv0 = unsafe {
@@ -63,7 +63,7 @@ fn get_loader_path(buffer: &mut [u8]) -> usize {
     };
 
     // It's safe to do this because the buffers passed to this function are always 4096 bytes
-    if unsafe { buffer.get_unchecked(..BIN_PATH.len()) } != BIN_PATH {
+    if unsafe { buffer.get_unchecked(1..BIN_PATH.len())  != BIN_PATH.get_unchecked(1..) } {
         abort(ExitCode::ProcPathInvalid, "Invalid loader binary location!", 0, None)
     }
 
