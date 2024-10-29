@@ -190,84 +190,40 @@ pub fn get_max_feature_level() -> u32 {
     let feature_set_80000001h_ecx: u32;
     let feature_set_07h_ebx: u32;
 
-    let max_basic_value: u32;
-    let max_advanced_value: u32;
-
-    // Check if eax 0x80000001 is possible (v2+ requirement)
     unsafe {
         asm!(
-            "mov eax, 80000000H",
-            "pop rbx",
-            "cpuid",
             "push rbx",
 
-            out("eax") max_advanced_value,
-            out("ecx") _,
-            out("edx") _,
-        )
-    }
-    if max_advanced_value < 0x80000001 {
-        return X86_64_HWCAPS_INDEX
-    }
-
-    unsafe {
-        asm!(
+            // Get leaf 1h (Exists on all x86 CPUs with cpuid)
             "mov eax, 1h",
-            "pop rbx",
+            "cpuid",
+            "push rcx",
+
+            // Get leaf 7h (Introduced with Core Duo, exists on all x86-64-v2+ CPUs)
+            "mov eax, 7h",
+            "xor ecx, ecx",
             "cpuid",
             "push rbx",
 
-            out("eax") _,
-            out("ecx") feature_set_01h_ecx,
-            out("edx") _,
-        )
-    }
-
-    unsafe {
-        asm!(
-            "mov eax, 80000001H",
-            "pop rbx",
+            // Get leaf 80000001h (Introduced with Pentium 4, exists on all x86-64 CPUs)
+            "mov eax, 80000001h",
             "cpuid",
-            "push rbx",
 
-            out("eax") _,
+            "pop rdx",
+            "pop rax",
+
+            "pop rbx",
+
+            out("eax") feature_set_01h_ecx,
             out("ecx") feature_set_80000001h_ecx,
-            out("edx") _,
-        )
-    }
+            out("edx") feature_set_07h_ebx,
+            options(pure, nomem)
+        );
+    };
 
     if !(feature_set_01h_ecx & X86_64_V2_HWCAPS_01H_ECX == X86_64_V2_HWCAPS_01H_ECX)
     || !(feature_set_80000001h_ecx  & X86_64_V2_HWCAPS_80000001H_ECX == X86_64_V2_HWCAPS_80000001H_ECX) {
         return X86_64_HWCAPS_INDEX
-    }
-
-    // Check if eax 0x7 is possible (v3 requirement)
-    unsafe {
-        asm!(
-            "mov eax, 0H",
-            "pop rbx",
-            "cpuid",
-            "push rbx",
-
-            out("eax") max_basic_value,
-            out("ecx") _,
-            out("edx") _,
-        )
-    }
-    if max_basic_value < 0x7 {
-        return X86_64_HWCAPS_INDEX + 1
-    }
-
-    unsafe {
-        asm!(
-            "mov eax, 7H",
-            "mov ecx, 0H",
-            "pop rbx",
-            "cpuid",
-            "mov eax, ebx", // Must move registers here since out("ebx") is illegal
-            "push rbx",
-            out("eax") feature_set_07h_ebx,
-        )
     }
 
     if !(feature_set_01h_ecx & X86_64_V3_HWCAPS_01H_ECX == X86_64_V3_HWCAPS_01H_ECX)
