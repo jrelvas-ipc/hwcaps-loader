@@ -62,8 +62,7 @@ fn get_loader_path(buffer: &mut [u8]) -> usize {
         Err(e) => abort(ExitCode::ProcPathIOError, "Failed to read loader path!", e.into_raw() as u32, None)
     };
 
-    // It's safe to do this because the buffers passed to this function are always 4096 bytes
-    if unsafe { buffer.get_unchecked(1..BIN_PATH.len())  != BIN_PATH.get_unchecked(1..) } {
+    if buffer[1..BIN_PATH.len()] != BIN_PATH[1..] {
         abort(ExitCode::ProcPathInvalid, "Invalid loader binary location!", 0, None)
     }
 
