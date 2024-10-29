@@ -76,11 +76,12 @@ const X86_64_V3_HWCAPS_80000001H_ECX: u32 = X86_64_V2_HWCAPS_80000001H_ECX | X86
 const X86_64_V3_HWCAPS_07H_EBX: u32 = X86Flags07hEbx::BMI1.bits() | X86Flags07hEbx::AVX2.bits() | X86Flags07hEbx::BMI2.bits();
 const X86_64_V4_HWCAPS_07H_EBX: u32 = X86_64_V3_HWCAPS_07H_EBX | X86Flags07hEbx::AVX512F.bits() | X86Flags07hEbx::AVX512DQ.bits()
                                     | X86Flags07hEbx::AVX512CD.bits() | X86Flags07hEbx::AVX512BW.bits() | X86Flags07hEbx::AVX512VL.bits();
+const X86_HWCAPS_STRING: &'static [u8] = b"i\086";
+const X86_HWCAPS_VERSION_INDEX: usize = 1;
+const X86_64_HWCAPS_STRING: &'static [u8] = b"x86-64-v\0";
+const X86_64_HWCAPS_VERSION_INDEX: usize = X86_64_HWCAPS_STRING.len() - 1;
 
-static X86_HWCAPS_STRING: &'static [u8] = b"i\086";
-static X86_64_HWCAPS_STRING: &'static [u8] = b"x86-64-v\0";
-
-pub static HWCAPS_CHARS: [u8; 8] = [
+pub const HWCAPS_CHARS: [u8; 8] = [
     b'3',
     b'4',
     b'5',
@@ -100,25 +101,22 @@ pub fn arch_name_changed(fl: u32) -> bool {
 #[inline]
 pub fn format_arch_name(buffer: &mut [u8], feature_level: u32) -> Result<(usize, usize), ()> {
     let arch_string: &[u8];
-    let mut version_index = 0;
+    let version_index: usize;
 
     if feature_level < X86_64_HWCAPS_INDEX {
-        arch_string = X86_HWCAPS_STRING
+        arch_string = X86_HWCAPS_STRING;
+        version_index = X86_HWCAPS_VERSION_INDEX
     } else {
-        arch_string = X86_64_HWCAPS_STRING
+        arch_string = X86_64_HWCAPS_STRING;
+        version_index = X86_64_HWCAPS_VERSION_INDEX
     }
 
     if buffer.len() < arch_string.len() {
         return Err(())
     }
 
-    for i in 0..arch_string.len() {
-        buffer[i] = arch_string[i];
-
-        if arch_string[i] == b'\0' {
-            version_index = i
-        }
-    }
+    unsafe { buffer.get_unchecked_mut(0..arch_string.len()).copy_from_slice(arch_string) };
+    buffer[version_index] = HWCAPS_CHARS[feature_level as usize];
 
     Ok((version_index, arch_string.len()))
 }
