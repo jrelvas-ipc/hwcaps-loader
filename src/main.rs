@@ -49,7 +49,7 @@ fn extract_argv0(ptr: *const *const c_char) -> &'static [u8]  {
         CStr::from_ptr(ptr).to_bytes_with_nul()
     };
 
-    if argv0.len() > sys::MAX_PATH_LEN as usize || argv0.len() < 1 {
+    if argv0.len() > sys::PATH_MAX as usize || argv0.len() < 1 {
         abort(ExitCode::CommandPathInvalid, "Command path doesn't fit bounds!", 0, None)
     }
 
@@ -100,7 +100,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
     // argv0 includes a terminator character. This comes in handy when interfacing with syscalls.
     let argv0 = extract_argv0(argv);
 
-    let mut loader_path = make_uninit_array!(sys::MAX_PATH_LEN as usize);
+    let mut loader_path = make_uninit_array!(sys::PATH_MAX as usize);
     // Note: The linux kernel doesn't write a null terminator. Since loader_path is an uninitialized array,
     //       we cannot assume there's a null terminator.
 
@@ -134,7 +134,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         loader_path[bin_index] = byte;
     }
 
-    let mut cmd_path = make_uninit_array!(sys::MAX_PATH_LEN as usize);
+    let mut cmd_path = make_uninit_array!(sys::PATH_MAX as usize);
     let cmd_path_len = resolve_path(cwd, argv0, &mut cmd_path);
 
     // cmd_path_len+1 must fit in cmd_path, because of the terminator.
@@ -198,7 +198,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
             // Copy the relative bin path
             path_len = base_length + arch_name_len;
 
-            if path_len > sys::MAX_PATH_LEN as usize {
+            if path_len > sys::PATH_MAX as usize {
                 abort(ExitCode::TargetPathTooLarge, "Target path too large!", path_len as u32, None)
             }
 
@@ -224,7 +224,7 @@ pub extern fn main(_argc: i32, argv: *const *const c_char, envp: *const *const c
         let str_ptr = target_path.as_ptr() as *const i8;
         let c_str = unsafe { CStr::from_ptr(str_ptr) };
 
-        match sys::execve(c_str, argv, envp).into_raw() {
+        match sys::execve(c_str, argv, envp).into_raw() as u32 {
             sys::ENOENT => continue,
             other => {
                 let path_buffer = unsafe { slice::from_raw_parts(target_path.as_ptr(), path_len) };

@@ -17,6 +17,9 @@ strip = "symbols"
 codegen-units = 1
 #opt-level = "z"
 
+[build-dependencies]
+bindgen = { version = "0.71" }
+
 [dependencies]
 bitflags = { version = "2" }
 syscalls = { version = "0.6", default-features = false }

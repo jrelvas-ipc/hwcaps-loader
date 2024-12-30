@@ -23,23 +23,25 @@
    The rest of hwcaps-loader should be (somewhat) OS agnostic.
 */
 
-use core::ffi::{c_int, /*c_ssize_t,*/ c_char, CStr};
+#[allow(unused_imports)]
+#[allow(dead_code)]
+#[allow(non_camel_case_types)]
+#[allow(non_upper_case_globals)]
+mod bindings {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
+pub use bindings::*;
+
+use core::ffi::{c_int, c_uint, c_void, /*c_size_t, c_ssize_t,*/ c_char, CStr};
 use syscalls::{Sysno, syscall, Errno};
 
 //TODO: remove this when https://github.com/rust-lang/rust/issues/88345 is stabilized
 #[allow(non_camel_case_types)]
+type c_size_t  = usize;
+#[allow(non_camel_case_types)]
 type c_ssize_t = isize;
 
-pub const MAX_PATH_LEN: c_ssize_t = 4096;
-
 pub const STDOUT: c_int = 1;
-pub const AT_FDCWD: c_int = -100;
-
-pub const O_NOFOLLOW: c_int = 0o400000;
-pub const O_PATH: c_int = 0o10000000;
-pub const O_CLOEXEC: c_int = 0x80000;
-
-pub const ENOENT: c_int = 2;
 
 /*
    LINKING
@@ -121,16 +123,11 @@ pub enum ExitCode {
     TargetNoViableBinaries = 243
 }
 
-#[repr(C)]
-pub struct IOVector {
-    pub iov_base: *const u8,
-    pub iov_len: usize
-}
-impl IOVector {
+impl iovec {
     pub fn new(buffer: &[u8]) -> Self {
-        IOVector {
-            iov_base: buffer.as_ptr(),
-            iov_len: buffer.len(),
+        iovec {
+            iov_base: buffer.as_ptr() as *mut c_void,
+            iov_len: buffer.len() as c_size_t,
         }
     }
 }
@@ -154,7 +151,7 @@ pub fn exit(code: u8) -> ! {
 }
 
 #[inline]
-pub fn writev(fd: i32, iovec: *const core::mem::MaybeUninit<IOVector>, iovcnt: usize) -> Result<usize, Errno> {
+pub fn writev(fd: i32, iovec: *const core::mem::MaybeUninit<iovec>, iovcnt: usize) -> Result<usize, Errno> {
     unsafe { syscall!(Sysno::writev, fd, iovec, iovcnt) }
 }
 
@@ -179,7 +176,7 @@ pub fn readlink(path: &CStr, buffer: &mut [u8]) -> Result<usize, Errno> {
 }
 
 #[inline]
-pub fn openat(dirfd: i32, path: &CStr, flags: c_int) -> Result<i32, Errno> {
+pub fn openat(dirfd: i32, path: &CStr, flags: c_uint) -> Result<i32, Errno> {
     let result = unsafe { syscall!(Sysno::openat, dirfd, path.as_ptr(), O_CLOEXEC | flags) };
     match result {
         Ok(fd) =>  return Ok(fd as i32),

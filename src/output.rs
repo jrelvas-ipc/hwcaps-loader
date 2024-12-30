@@ -1,4 +1,4 @@
-use crate::sys::{exit, ExitCode, writev, IOVector, STDOUT};
+use crate::sys::{exit, ExitCode, writev, iovec, STDOUT};
 use crate::path::itoa;
 
 use core::mem::MaybeUninit;
@@ -42,11 +42,11 @@ pub mod debug {
 
 #[inline(always)]
 fn print(msg: &'static str, errno: u32, path: Option<&[u8]>) {
-    let mut array: [MaybeUninit<IOVector>; 9] = [const { MaybeUninit::uninit() }; 9];
+    let mut array: [MaybeUninit<iovec>; 9] = [const { MaybeUninit::uninit() }; 9];
     let mut offset = 0;
 
     let mut write_part = |buf: &[u8]| {
-        array[offset].write(IOVector::new(buf));
+        array[offset].write(iovec::new(buf));
         offset += 1;
     };
 
