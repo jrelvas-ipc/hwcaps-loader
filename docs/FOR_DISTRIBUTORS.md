@@ -7,7 +7,7 @@
 The default rustc and linker options should be sane and don't *require* any
 changes.*
 
-`hwcaps-loader` comes with support for three different ABI types, each with 
+`hwcaps-loader` comes with support for three different ABI types, each with
 different properties and advantages...
 
 `x86_64-unknown-linux-gnu` -
@@ -42,8 +42,8 @@ Build without libc, raw rust entry point.
 
 The GNU target is recommended during development and testing, as that's probably what you're used to.
 
-Otherwise, MUSL is recommended due to it being significantly faster and having no runtime dependencies. 
-If your distribution can build with the Rust Nightly toolchain, consider using the "none" ABI! It's well tested and should be as stable as MUSL. 
+Otherwise, MUSL is recommended due to it being significantly faster and having no runtime dependencies.
+If your distribution can build with the Rust Nightly toolchain, consider using the "none" ABI! It's well tested and should be as stable as MUSL.
 
 **\* Note:** if Rust Nightly is available, it's highly recommended to run `cargo build` with the following arguments:
 ```
@@ -82,9 +82,9 @@ cargo build -p empty_binary --profile release --target x86_64-unknown-none
 
 A `hwcaps-loader` package should provide these files:
 ```
-/usr/bin/hwcaps-loader -> The actual binary which is responsible for detecting the 
+/usr/bin/hwcaps-loader -> The actual binary which is responsible for detecting the
                           CPU's feature level and executing the appropriate program
-/usr/hwcaps-loader/-> The directory where optimized binaries loaded 
+/usr/hwcaps/-> The directory where optimized binaries loaded
                           by hwcaps-loader are stored
 ```
 
@@ -96,10 +96,10 @@ A package which wishes to provide the optimized binaries `foo` and `bar` should 
 
 /usr/libexec/bar (symlink /usr/bin/hwcaps-loader) -> A placeholder symlink, where the bar
                                                      binary would normally be present in
-                                                     (used to call hwcaps-loader)                                       
+                                                     (used to call hwcaps-loader)
 
-/usr/hwcaps-loader/{$fl[0..N]}/bin/foo  -> foo binaries for feature levels $fl[0..N] 
-/usr/hwcaps-loader/{$fl[0..N]}/libexec/bar  -> bar binaries for feature levels $fl[0..N]
+/usr/hwcaps/{$fl[0..N]}/bin/foo  -> foo binaries for feature levels $fl[0..N]
+/usr/hwcaps/{$fl[0..N]}/libexec/bar  -> bar binaries for feature levels $fl[0..N]
 ```
 Where `$fl[0..N]` are feature levels recognized by `hwcaps-loader` which the package wishes to provide
 (YOU DON'T NEED TO PROVIDE EVERY ONE):
@@ -117,7 +117,7 @@ Where `$fl[0..N]` are feature levels recognized by `hwcaps-loader` which the pac
 
 ## Errors
 
-Provided there's no spurious IO errors, hwcaps-loader should never error unless 
+Provided there's no spurious IO errors, hwcaps-loader should never error unless
 the user (or a misbehaving program) intentionally passes an incorrect `argv0` (command path) to `hwcaps-loader`,
 or attempts to execute it directly, without going through a symlink.
 
@@ -126,33 +126,33 @@ given by other programs and aid with debugging, however, due to its nature, it m
 difficult to differentiate them from the target program. When in doubt, run `strace`.
 Here's a list of possible codes and their meanings:
 
-- `100` - `RUST_PANIC`:  
+- `100` - `RUST_PANIC`:
 Rust Panic occured. This should be impossible. If it happens, then it's a nasty bug.
 Use the devel profile to print out panic messages.
-- `200` - `SELF_EXECUTION`:  
+- `200` - `SELF_EXECUTION`:
 `execve()` was called on `hwcaps-loader` directly instead of one its symlinks, which would
 result in recursion. `hwcaps-loader` should *never* be a part of this mechanism.
-- `210` - `COMMAND_PATH_INVALID`:  
+- `210` - `COMMAND_PATH_INVALID`:
 the `argv0` passed to hwcaps-loader has no null terminator by index 4096, making it an
 invalid path. Generally doesn't happen unless a misbehaving program attempts to run.
-- `220` - `PROC_PATH_IO_ERROR`:  
+- `220` - `PROC_PATH_IO_ERROR`:
 An IO error occured while attempting to read `/self/proc/exe`. This generally only happens if
-the system is missing support for this magic link or if it's buggy.  
+the system is missing support for this magic link or if it's buggy.
 It could also be a sign of faulty sandboxing/containment.
-- `221` - `PROC_PATH_INVALID`:  
+- `221` - `PROC_PATH_INVALID`:
 The path returned by `/self/proc/exe` is invalid. The `hwcaps-loader` binary should
 always be in `/usr/bin/`.
-- `230` - `PATH_RESOLUTION_IO_ERROR`:  
+- `230` - `PATH_RESOLUTION_IO_ERROR`:
 An IO error occured while attempting to use FS syscalls to resolve the absolute path.
 Generally only happens if invalid values are passed to `hwcaps-loader`, the system is buggy,
 or there's a problem with the filesystem.
-- `240` - `TARGET_PATH_INVALID`:  
-Target binaries being executed through `hwcaps-loader` must have `/usr` as an ancestor. 
-- `241` - `TARGET_PATH_TOO_LARGE`:  
+- `240` - `TARGET_PATH_INVALID`:
+Target binaries being executed through `hwcaps-loader` must have `/usr` as an ancestor.
+- `241` - `TARGET_PATH_TOO_LARGE`:
 The target path is too large and doesn't fit in 4096 bytes.
-- `242` - `TARGET_EXECUTION_ERROR`:  
+- `242` - `TARGET_EXECUTION_ERROR`:
 An unknown IO error occured while attempting to `execve()` the target path. If this
 occurs, something is wrong with your packaging or the filesystem is borked.
-- `243` - `TARGET_NO_VIABLE_BINARIES`:  
+- `243` - `TARGET_NO_VIABLE_BINARIES`:
 `hwcaps-loader` exhausted all possible target paths, and none of them existed. If this
 occurs, something is wrong with your packaging or the filesystem is borked.
